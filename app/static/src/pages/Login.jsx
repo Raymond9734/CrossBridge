@@ -52,7 +52,7 @@ export default function Login() {
         
         try {
             // Using Inertia.js to submit form
-            router.post('/login', formData, {
+            router.post('/login/', formData, {
                 onSuccess: () => {
                     // Redirect will be handled by backend
                 },
@@ -178,7 +178,7 @@ export default function Login() {
                                 </label>
                             </div>
                             <Link 
-                                href="/forgot-password" 
+                                href="/forgot-password/" 
                                 className="text-sm text-teal-600 hover:text-teal-500 font-medium"
                             >
                                 Forgot password?
@@ -207,7 +207,7 @@ export default function Login() {
                         <p className="text-sm text-gray-600">
                             Don't have an account?{' '}
                             <Link 
-                                href="/register" 
+                                href="/register/" 
                                 className="font-medium text-teal-600 hover:text-teal-500"
                             >
                                 Create your account
