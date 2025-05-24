@@ -1,3 +1,4 @@
+# Updated app/urls.py - add these to your existing urlpatterns
 from django.urls import path
 from . import views
 
@@ -16,6 +17,26 @@ urlpatterns = [
     # API endpoints for AJAX requests
     path("api/doctors/", views.get_available_doctors, name="api_doctors"),
     path("api/available-slots/", views.get_available_slots, name="api_available_slots"),
-    # Other pages
-    path("about/", views.about, name="about"),
+    path(
+        "api/medical-records/", views.medical_records_view, name="api_medical_records"
+    ),
+    path("api/patients/", views.patients_list_view, name="api_patients"),
+    # NEW: Doctor availability management endpoints
+    path(
+        "api/doctor-availability/",
+        views.doctor_availability_view,
+        name="api_doctor_availability",
+    ),
+    path(
+        "api/toggle-availability/",
+        views.toggle_availability_view,
+        name="api_toggle_availability",
+    ),
+    path("api/days-of-week/", views.get_days_of_week, name="api_days_of_week"),
+    # Add appointment cancellation endpoint if you haven't already
+    path(
+        "api/appointments/cancel/",
+        views.cancel_appointment_view,
+        name="cancel_appointment",
+    ),
 ]
