@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePage } from '@inertiajs/react';
 import DoctorDashboard from '../components/dashboard/Doctor'
 import PatientDashboard from '../components/dashboard/Patient'
 import AppointmentsList from '../components/AppointmentList';
@@ -6,14 +7,18 @@ import ProfileManagement from '../components/ProfileManagement';
 import Sidebar from '../components/SideBar';
 import Navbar from '../components/NavBar';
 import Toast from '../components/ToastNotification';
-import mockData from '../MockData/Data'; // Assuming you have a mockData file for demo purposes
 
 // Main Healthcare App Component
 const HealthcareApp = () => {
-  const [currentUser, setCurrentUser] = useState(mockData.user);
+  // Get data from Django backend via Inertia.js
+  const { auth, user, stats, appointments, medical_records, patients, notifications } = usePage().props;
+  
   const [activeView, setActiveView] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ isVisible: false, message: '', type: 'info' });
+  
+  // Use auth.user instead of mock currentUser
+  const currentUser = auth?.user || user;
   
   const showToast = (message, type = 'info') => {
     setToast({ isVisible: true, message, type });
@@ -27,12 +32,21 @@ const HealthcareApp = () => {
     switch (activeView) {
       case 'dashboard':
         return currentUser?.role === 'doctor' 
-          ? <DoctorDashboard showToast={showToast} />
-          : <PatientDashboard showToast={showToast} />;
+          ? <DoctorDashboard 
+              showToast={showToast} 
+              dashboardData={{ stats, appointments, patients }}
+            />
+          : <PatientDashboard 
+              showToast={showToast} 
+              dashboardData={{ stats, appointments, medical_records }}
+            />;
       case 'appointments':
         return <AppointmentsList userRole={currentUser?.role} showToast={showToast} />;
       case 'book-appointment':
-        return <PatientDashboard showToast={showToast} />;
+        return <PatientDashboard 
+          showToast={showToast} 
+          dashboardData={{ stats, appointments, medical_records }}
+        />;
       case 'profile':
         return <ProfileManagement currentUser={currentUser} showToast={showToast} />;
       case 'medical-records':
@@ -57,12 +71,15 @@ const HealthcareApp = () => {
           </div>
         );
       default:
-        return <PatientDashboard showToast={showToast} />;
+        return <PatientDashboard 
+          showToast={showToast} 
+          dashboardData={{ stats, appointments, medical_records }}
+        />;
     }
   };
   
   return (
-    <div className="min-h-screen bg-gray-50  lg:flex">
+    <div className="min-h-screen bg-gray-50 lg:flex">
       {/* Toast Notifications */}
       <Toast
         message={toast.message}
@@ -87,6 +104,7 @@ const HealthcareApp = () => {
           currentUser={currentUser}
           isSidebarOpen={isSidebarOpen}
           setIsSidebarOpen={setIsSidebarOpen}
+          notifications={notifications}
         />
         
         {/* Page Content */}
