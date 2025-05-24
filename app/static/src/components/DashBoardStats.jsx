@@ -1,25 +1,51 @@
 import React from 'react';
 
-
 // Dashboard Stats Component
-const DashboardStats = ({ userRole }) => {
+const DashboardStats = ({ userRole, stats = {} }) => {
+ 
+
+  // Use real stats data
   const patientStats = [
-    { label: 'Upcoming Appointments', value: '3', color: 'bg-blue-500' },
-    { label: 'Completed Visits', value: '12', color: 'bg-green-500' },
-    { label: 'Pending Reports', value: '2', color: 'bg-yellow-500' }
+    { 
+      label: 'Upcoming Appointments', 
+      value: String(stats.upcoming_appointments || 0), 
+      color: 'bg-blue-500' 
+    },
+    { 
+      label: 'Completed Visits', 
+      value: String(stats.completed_visits || 0), 
+      color: 'bg-green-500' 
+    },
+    { 
+      label: 'Total Appointments', 
+      value: String(stats.total_appointments || 0), 
+      color: 'bg-yellow-500' 
+    }
   ];
 
   const doctorStats = [
-    { label: "Today's Appointments", value: '8', color: 'bg-blue-500' },
-    { label: 'Total Patients', value: '142', color: 'bg-green-500' },
-    { label: 'Pending Reviews', value: '5', color: 'bg-yellow-500' }
+    { 
+      label: "Today's Appointments", 
+      value: String(stats.todays_appointments || 0), 
+      color: 'bg-blue-500' 
+    },
+    { 
+      label: 'Total Patients', 
+      value: String(stats.total_patients || 0), 
+      color: 'bg-green-500' 
+    },
+    { 
+      label: 'Pending Reviews', 
+      value: String(stats.pending_reviews || 0), 
+      color: 'bg-yellow-500' 
+    }
   ];
 
-  const stats = userRole === 'doctor' ? doctorStats : patientStats;
+  const displayStats = userRole === 'doctor' ? doctorStats : patientStats;
   
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-      {stats.map((stat, index) => (
+      {displayStats.map((stat, index) => (
         <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center">
             <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center`}>
