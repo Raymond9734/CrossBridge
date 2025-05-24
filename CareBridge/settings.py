@@ -123,6 +123,10 @@ USE_I18N = True
 
 USE_TZ = True
 
+# Media files configuration
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
@@ -152,7 +156,10 @@ DJANGO_VITE_MANIFEST_PATH = os.path.join(STATIC_ROOT, "manifest.json")
 
 # Include DJANGO_VITE_ASSETS_PATH into STATICFILES_DIRS to be copied inside
 # when run command python manage.py collectstatic
-STATICFILES_DIRS = [DJANGO_VITE_ASSETS_PATH]
+STATICFILES_DIRS = [
+    DJANGO_VITE_ASSETS_PATH,
+    BASE_DIR / "media",
+]
 
 # Inertia settings
 INERTIA_LAYOUT = BASE_DIR / "app" / "templates/index.html"
@@ -164,3 +171,15 @@ def immutable_file_test(path, url):
     # Match filename with 12 hex digits before the extension
     # e.g. app.db8f2edc0c8a.js
     return re.match(r"^.+\.[0-9a-f]{8,12}\..+$", url)
+
+
+# Authentication settings
+LOGIN_URL = "/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/login/"
+
+
+# Session settings
+SESSION_COOKIE_AGE = 86400  # 24 hours
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_SAVE_EVERY_REQUEST = True
