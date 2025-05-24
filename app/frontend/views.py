@@ -236,6 +236,20 @@ def dashboard_view(request):
             ],
         }
 
+        profile_data = {
+            "firstName": request.user.first_name,
+            "lastName": request.user.last_name,
+            "email": request.user.email,
+            "phone": user_profile.phone or "",
+            "address": user_profile.address or "",
+            "emergencyContact": user_profile.emergency_contact or "",
+            "emergencyPhone": user_profile.emergency_phone or "",
+            "medicalHistory": (
+                user_profile.medical_history if user_profile.role == "patient" else ""
+            ),
+            "role": user_profile.role,
+        }
+
         dashboard_data.update(
             {
                 "user": {
@@ -245,13 +259,13 @@ def dashboard_view(request):
                     "role": user_profile.role,
                 },
                 "notifications": notifications_data,
+                "profile": profile_data,
             }
         )
 
         return inertia_render(request, "Index", props=dashboard_data)
 
     except Exception as e:
-
         logger.error(f"Dashboard error for user {request.user.id}: {e}")
 
         return inertia_render(
@@ -260,6 +274,7 @@ def dashboard_view(request):
             props={
                 "user": {"name": request.user.get_full_name(), "role": "patient"},
                 "error": "Unable to load dashboard data",
+                "profile": {},
             },
         )
 
@@ -359,51 +374,43 @@ def medical_records_view(request):
 
 @login_required
 def profile_view(request):
-    """Profile management page"""
+    """Profile management page - handles profile updates"""
     user_profile = get_object_or_404(UserProfile, user=request.user)
 
     if request.method == "POST":
         try:
-            data = json.loads(request.body)
-            user_service = UserProfileService()
+            # Get data from Inertia.js request
+            data = request.POST.dict() if request.POST else json.loads(request.body)
 
-            # Update profile
-            user_service.update_profile(user_profile, data)
+            # Update user fields
+            if "firstName" in data:
+                request.user.first_name = data["firstName"]
+            if "lastName" in data:
+                request.user.last_name = data["lastName"]
+            if "email" in data:
+                request.user.email = data["email"]
+            request.user.save()
 
-            return JsonResponse(
-                {"success": True, "message": "Profile updated successfully"}
-            )
-        except Exception:
-            return JsonResponse({"success": False, "error": "Failed to update profile"})
+            # Update profile fields
+            if "phone" in data:
+                user_profile.phone = data["phone"]
+            if "address" in data:
+                user_profile.address = data["address"]
+            if "emergencyContact" in data:
+                user_profile.emergency_contact = data["emergencyContact"]
+            if "medicalHistory" in data and user_profile.role == "patient":
+                user_profile.medical_history = data["medicalHistory"]
+            user_profile.save()
 
-    # GET request - return current profile data
-    profile_data = {
-        "firstName": request.user.first_name,
-        "lastName": request.user.last_name,
-        "email": request.user.email,
-        "phone": user_profile.phone,
-        "address": user_profile.address,
-        "emergencyContact": user_profile.emergency_contact,
-        "emergencyPhone": user_profile.emergency_phone,
-        "medicalHistory": (
-            user_profile.medical_history if user_profile.role == "patient" else ""
-        ),
-        "role": user_profile.role,
-    }
+            # Redirect back to dashboard (which will include updated profile data)
+            return redirect("frontend:dashboard")
 
-    return inertia_render(
-        request,
-        "Profile",
-        props={
-            "profile": profile_data,
-            "user": {
-                "id": request.user.id,
-                "name": request.user.get_full_name(),
-                "email": request.user.email,
-                "role": user_profile.role,
-            },
-        },
-    )
+        except Exception as e:
+            logger.error(f"Profile update error: {e}")
+            return redirect("frontend:dashboard")  # Redirect on error too
+
+    # GET request - redirect to dashboard (profile data is included there)
+    return redirect("frontend:dashboard")
 
 
 @login_required
@@ -499,7 +506,8 @@ def patients_view(request):
             props={"patients": patients_data},
         )
 
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error During in Patients View: {e}")
         return inertia_render(
             request,
             "Patients",
