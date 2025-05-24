@@ -83,7 +83,7 @@ export default function Register() {
         setIsLoading(true);
         
         try {
-            router.post('/register', formData, {
+            router.post('/register/', formData, {
                 onSuccess: () => {
                     // Redirect will be handled by backend
                 },
@@ -448,7 +448,7 @@ export default function Register() {
                         <p className="text-sm text-gray-600">
                             Already have an account?{' '}
                             <Link 
-                                href="/login" 
+                                href="/login/" 
                                 className="font-medium text-teal-600 hover:text-teal-500"
                             >
                                 Sign in here
