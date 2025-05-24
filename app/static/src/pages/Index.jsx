@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { usePage } from '@inertiajs/react';
-import DoctorDashboard from '../components/dashboard/Doctor'
-import PatientDashboard from '../components/dashboard/Patient'
+import DoctorDashboard from '../components/dashboard/Doctor';
+import PatientDashboard from '../components/dashboard/Patient';
 import AppointmentsList from '../components/AppointmentList';
 import ProfileManagement from '../components/ProfileManagement';
+import MedicalRecords from '../components/MedicalRecord';
+import ScheduleManagement from '../components/ScheduleManagement';
+import PatientManagement from '../components/PatientManagement';
 import Sidebar from '../components/SideBar';
 import Navbar from '../components/NavBar';
 import Toast from '../components/ToastNotification';
@@ -11,14 +14,15 @@ import Toast from '../components/ToastNotification';
 // Main Healthcare App Component
 const HealthcareApp = () => {
   // Get data from Django backend via Inertia.js
-  const { auth, user, stats, appointments, medical_records, patients, notifications } = usePage().props;
+  // The Django backend sends all data as top-level props
+  const props = usePage().props;
   
   const [activeView, setActiveView] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ isVisible: false, message: '', type: 'info' });
   
-  // Use auth.user instead of mock currentUser
-  const currentUser = auth?.user || user;
+  // Get current user from props
+  const currentUser = props.user;
   
   const showToast = (message, type = 'info') => {
     setToast({ isVisible: true, message, type });
@@ -34,47 +38,65 @@ const HealthcareApp = () => {
         return currentUser?.role === 'doctor' 
           ? <DoctorDashboard 
               showToast={showToast} 
-              dashboardData={{ stats, appointments, patients }}
+              dashboardData={{
+                stats: props.stats,
+                appointments: props.appointments,
+                patients: props.patients
+              }}
             />
           : <PatientDashboard 
               showToast={showToast} 
-              dashboardData={{ stats, appointments, medical_records }}
+              dashboardData={{
+                stats: props.stats,
+                appointments: props.appointments,
+                medical_records: props.medical_records
+              }}
             />;
+            
       case 'appointments':
         return <AppointmentsList userRole={currentUser?.role} showToast={showToast} />;
+        
       case 'book-appointment':
+        // For book appointment, we'll show the patient dashboard which has the booking modal
         return <PatientDashboard 
           showToast={showToast} 
-          dashboardData={{ stats, appointments, medical_records }}
+          dashboardData={{
+            stats: props.stats,
+            appointments: props.appointments,
+            medical_records: props.medical_records
+          }}
         />;
+        
       case 'profile':
         return <ProfileManagement currentUser={currentUser} showToast={showToast} />;
+        
       case 'medical-records':
-        return (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Medical Records</h2>
-            <p className="text-gray-600">Medical records viewer would be implemented here with proper security and permission checks.</p>
-          </div>
-        );
+        return <MedicalRecords showToast={showToast} />;
+        
       case 'schedule':
-        return (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Schedule Management</h2>
-            <p className="text-gray-600">Doctor schedule management interface would be implemented here.</p>
-          </div>
-        );
+        return <ScheduleManagement showToast={showToast} />;
+        
       case 'patients':
-        return (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Patient Management</h2>
-            <p className="text-gray-600">Patient list and management interface would be implemented here.</p>
-          </div>
-        );
+        return <PatientManagement showToast={showToast} />;
+        
       default:
-        return <PatientDashboard 
-          showToast={showToast} 
-          dashboardData={{ stats, appointments, medical_records }}
-        />;
+        return currentUser?.role === 'doctor' 
+          ? <DoctorDashboard 
+              showToast={showToast} 
+              dashboardData={{
+                stats: props.stats,
+                appointments: props.appointments,
+                patients: props.patients
+              }}
+            />
+          : <PatientDashboard 
+              showToast={showToast} 
+              dashboardData={{
+                stats: props.stats,
+                appointments: props.appointments,
+                medical_records: props.medical_records
+              }}
+            />;
     }
   };
   
@@ -104,7 +126,7 @@ const HealthcareApp = () => {
           currentUser={currentUser}
           isSidebarOpen={isSidebarOpen}
           setIsSidebarOpen={setIsSidebarOpen}
-          notifications={notifications}
+          notifications={props.notifications || { unread_count: 0, items: [] }}
         />
         
         {/* Page Content */}
