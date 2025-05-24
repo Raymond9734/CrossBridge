@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import mockData from '../MockData/Data';
+import { router } from '@inertiajs/react';
 
 // Appointment Booking Modal
 const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
@@ -9,25 +9,92 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
     const [selectedTime, setSelectedTime] = useState('');
     const [appointmentType, setAppointmentType] = useState('');
     const [notes, setNotes] = useState('');
+    const [doctors, setDoctors] = useState([]);
+    const [timeSlots, setTimeSlots] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
     
-    const timeSlots = ['09:00 AM', '10:00 AM', '11:00 AM', '02:00 PM', '03:00 PM', '04:00 PM'];
+    // Fetch doctors from backend API
+    useEffect(() => {
+        if (isOpen) {
+            fetchDoctors();
+        }
+    }, [isOpen]);
+
+    // Fetch available slots when doctor and date change
+    useEffect(() => {
+        if (selectedDoctor && selectedDate) {
+            fetchAvailableSlots();
+        }
+    }, [selectedDoctor, selectedDate]);
+
+    const fetchDoctors = async () => {
+        try {
+            const response = await fetch('/api/doctors/');
+            const data = await response.json();
+            setDoctors(data.doctors || []);
+        } catch (error) {
+            console.error('Failed to fetch doctors:', error);
+            showToast('Failed to load doctors', 'error');
+        }
+    };
+
+    const fetchAvailableSlots = async () => {
+        try {
+            const doctor = doctors.find(d => d.name === selectedDoctor);
+            if (!doctor) return;
+
+            const response = await fetch(`/api/available-slots/?doctor_id=${doctor.id}&date=${selectedDate}`);
+            const data = await response.json();
+            setTimeSlots(data.slots || []);
+            setSelectedTime(''); // Reset selected time when slots change
+        } catch (error) {
+            console.error('Failed to fetch time slots:', error);
+            showToast('Failed to load available times', 'error');
+            setTimeSlots([]);
+        }
+    };
     
-    const handleSubmit = () => {
-      if (!selectedDoctor || !selectedDate || !selectedTime || !appointmentType) {
-        showToast('Please fill in all required fields', 'error');
-        return;
-      }
-      
-      onBook({
-        doctor: selectedDoctor,
-        date: selectedDate,
-        time: selectedTime,
-        type: appointmentType,
-        notes
-      });
-      
-      showToast('Appointment booked successfully!', 'success');
-      onClose();
+    const handleSubmit = async () => {
+        if (!selectedDoctor || !selectedDate || !selectedTime || !appointmentType) {
+            showToast('Please fill in all required fields', 'error');
+            return;
+        }
+        
+        setIsLoading(true);
+        
+        try {
+            // Use Inertia.js to post to Django backend
+            router.post('/book-appointment/', {
+                doctor: selectedDoctor,
+                date: selectedDate,
+                time: selectedTime,
+                type: appointmentType,
+                notes
+            }, {
+                onSuccess: () => {
+                    showToast('Appointment booked successfully!', 'success');
+                    onClose();
+                    // Reset form
+                    setSelectedDoctor('');
+                    setSelectedDate('');
+                    setSelectedTime('');
+                    setAppointmentType('');
+                    setNotes('');
+                    // Refresh the page to show updated data
+                    window.location.reload();
+                },
+                onError: (errors) => {
+                    console.error('Booking errors:', errors);
+                    showToast(errors.general || 'Failed to book appointment', 'error');
+                },
+                onFinish: () => {
+                    setIsLoading(false);
+                }
+            });
+        } catch (error) {
+            setIsLoading(false);
+            showToast('Failed to book appointment', 'error');
+        }
     };
     
     if (!isOpen) return null;
@@ -51,9 +118,12 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
                 value={selectedDoctor}
                 onChange={(e) => setSelectedDoctor(e.target.value)}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                disabled={doctors.length === 0}
               >
-                <option value="">Choose a doctor</option>
-                {mockData.doctors.map(doctor => (
+                <option value="">
+                  {doctors.length === 0 ? 'Loading doctors...' : 'Choose a doctor'}
+                </option>
+                {doctors.map(doctor => (
                   <option key={doctor.id} value={doctor.name} disabled={!doctor.available}>
                     {doctor.name} - {doctor.specialty} {!doctor.available && '(Unavailable)'}
                   </option>
@@ -89,22 +159,34 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Available Time Slots *</label>
-              <div className="grid grid-cols-2 gap-2">
-                {timeSlots.map(time => (
-                  <button
-                    key={time}
-                    type="button"
-                    onClick={() => setSelectedTime(time)}
-                    className={`p-2 text-sm rounded-lg border transition-colors ${
-                      selectedTime === time
-                        ? 'bg-teal-500 text-white border-teal-500'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    {time}
-                  </button>
-                ))}
-              </div>
+              {selectedDoctor && selectedDate ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {timeSlots.length > 0 ? (
+                    timeSlots.map(time => (
+                      <button
+                        key={time}
+                        type="button"
+                        onClick={() => setSelectedTime(time)}
+                        className={`p-2 text-sm rounded-lg border transition-colors ${
+                          selectedTime === time
+                            ? 'bg-teal-500 text-white border-teal-500'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {time}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="col-span-2 text-center py-4 text-gray-500">
+                      No available slots for this date
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-500">
+                  Please select a doctor and date to see available times
+                </div>
+              )}
             </div>
             
             <div>
@@ -123,15 +205,17 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
                 type="button"
                 onClick={onClose}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                disabled={isLoading}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSubmit}
-                className="flex-1 px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600"
+                className="flex-1 px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:opacity-50"
+                disabled={isLoading}
               >
-                Book Appointment
+                {isLoading ? 'Booking...' : 'Book Appointment'}
               </button>
             </div>
           </div>
