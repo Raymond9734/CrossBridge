@@ -1,19 +1,39 @@
-import React, { useState, useEffect } from 'react';
-
+import React, { useState } from 'react';
+import { usePage, router } from '@inertiajs/react';
 
 // Profile Management Component
 const ProfileManagement = ({ currentUser, showToast }) => {
+  // Get profile data from backend
+  const { profile = {} } = usePage().props;
+  
   const [formData, setFormData] = useState({
-    name: currentUser?.name || '',
-    email: currentUser?.email || '',
-    phone: '',
-    address: '',
-    emergencyContact: '',
-    medicalHistory: ''
+    firstName: currentUser?.first_name || profile.firstName || '',
+    lastName: currentUser?.last_name || profile.lastName || '',
+    email: currentUser?.email || profile.email || '',
+    phone: currentUser?.phone || profile.phone || '',
+    address: currentUser?.address || profile.address || '',
+    emergencyContact: currentUser?.emergency_contact || profile.emergencyContact || '',
+    medicalHistory: currentUser?.medical_history || profile.medicalHistory || ''
   });
   
+  const [isLoading, setIsLoading] = useState(false);
+  
   const handleSubmit = () => {
-    showToast('Profile updated successfully!', 'success');
+    setIsLoading(true);
+    
+    // Use Inertia.js to post to Django backend
+    router.post('/profile/', formData, {
+      onSuccess: () => {
+        showToast('Profile updated successfully!', 'success');
+      },
+      onError: (errors) => {
+        console.error('Profile update errors:', errors);
+        showToast('Failed to update profile', 'error');
+      },
+      onFinish: () => {
+        setIsLoading(false);
+      }
+    });
   };
   
   const handleInputChange = (e) => {
@@ -33,13 +53,26 @@ const ProfileManagement = ({ currentUser, showToast }) => {
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
             <input
               type="text"
-              name="name"
-              value={formData.name}
+              name="firstName"
+              value={formData.firstName}
               onChange={handleInputChange}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              disabled={isLoading}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+            <input
+              type="text"
+              name="lastName"
+              value={formData.lastName}
+              onChange={handleInputChange}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              disabled={isLoading}
             />
           </div>
           
@@ -51,6 +84,7 @@ const ProfileManagement = ({ currentUser, showToast }) => {
               value={formData.email}
               onChange={handleInputChange}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              disabled={isLoading}
             />
           </div>
           
@@ -62,10 +96,11 @@ const ProfileManagement = ({ currentUser, showToast }) => {
               value={formData.phone}
               onChange={handleInputChange}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              disabled={isLoading}
             />
           </div>
           
-          <div>
+          <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">Emergency Contact</label>
             <input
               type="tel"
@@ -73,6 +108,7 @@ const ProfileManagement = ({ currentUser, showToast }) => {
               value={formData.emergencyContact}
               onChange={handleInputChange}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              disabled={isLoading}
             />
           </div>
         </div>
@@ -85,6 +121,7 @@ const ProfileManagement = ({ currentUser, showToast }) => {
             onChange={handleInputChange}
             rows={3}
             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+            disabled={isLoading}
           />
         </div>
         
@@ -98,6 +135,7 @@ const ProfileManagement = ({ currentUser, showToast }) => {
               rows={4}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               placeholder="Any allergies, chronic conditions, medications, etc."
+              disabled={isLoading}
             />
           </div>
         )}
@@ -106,9 +144,10 @@ const ProfileManagement = ({ currentUser, showToast }) => {
           <button
             type="button"
             onClick={handleSubmit}
-            className="px-6 py-3 bg-teal-500 text-white rounded-lg hover:bg-teal-600 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+            className="px-6 py-3 bg-teal-500 text-white rounded-lg hover:bg-teal-600 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50"
+            disabled={isLoading}
           >
-            Update Profile
+            {isLoading ? 'Updating...' : 'Update Profile'}
           </button>
         </div>
       </div>
