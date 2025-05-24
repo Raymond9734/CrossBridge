@@ -7,14 +7,16 @@ const ProfileManagement = ({ currentUser, showToast }) => {
   const { profile = {} } = usePage().props;
   
   const [formData, setFormData] = useState({
-    firstName: currentUser?.first_name || profile.firstName || '',
-    lastName: currentUser?.last_name || profile.lastName || '',
-    email: currentUser?.email || profile.email || '',
-    phone: currentUser?.phone || profile.phone || '',
-    address: currentUser?.address || profile.address || '',
-    emergencyContact: currentUser?.emergency_contact || profile.emergencyContact || '',
-    medicalHistory: currentUser?.medical_history || profile.medicalHistory || ''
+    firstName: profile.firstName || currentUser?.first_name || '',
+    lastName: profile.lastName || currentUser?.last_name || '',
+    email: profile.email || currentUser?.email || '',
+    phone: profile.phone || '',
+    address: profile.address || '',
+    emergencyContact: profile.emergencyContact || '',
+    medicalHistory: profile.medicalHistory || ''
   });
+
+
   
   const [isLoading, setIsLoading] = useState(false);
   
