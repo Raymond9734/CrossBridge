@@ -309,6 +309,7 @@ class Command(BaseCommand):
                 message=notif_data["message"],
                 is_read=False,
             )
+        self.create_additional_medical_records()
 
         self.stdout.write(f"Created {len(notifications_data)} notifications")
 
@@ -363,3 +364,130 @@ class Command(BaseCommand):
             "physical_therapy": "Over-the-counter anti-inflammatory as needed.",
         }
         return prescriptions.get(appointment_type, "")
+
+    def create_additional_medical_records(self):
+        """Create additional medical records for better testing"""
+
+        # Get existing completed appointments
+        completed_appointments = Appointment.objects.filter(status="completed")
+
+        for appointment in completed_appointments:
+            # Create medical record if it doesn't exist
+            if not hasattr(appointment, "medical_record"):
+                medical_record = MedicalRecord.objects.create(
+                    appointment=appointment,
+                    diagnosis=self.get_sample_diagnosis(appointment.appointment_type),
+                    treatment=self.get_sample_treatment(appointment.appointment_type),
+                    prescription=self.get_sample_prescription(
+                        appointment.appointment_type
+                    ),
+                    follow_up_required=appointment.appointment_type
+                    in ["follow_up", "consultation"],
+                    # Add some sample vitals
+                    blood_pressure_systolic=120
+                    + (appointment.id % 40),  # 120-160 range
+                    blood_pressure_diastolic=80 + (appointment.id % 20),  # 80-100 range
+                    heart_rate=60 + (appointment.id % 40),  # 60-100 range
+                    temperature=98.6
+                    + ((appointment.id % 10) - 5) * 0.2,  # 97.6-99.6 range
+                    weight=150 + (appointment.id % 100),  # 150-250 range
+                    height=60 + (appointment.id % 24),  # 5'0" to 7'0" range
+                )
+
+                if medical_record.follow_up_required:
+                    medical_record.follow_up_date = (
+                        appointment.appointment_date + timedelta(days=30)
+                    )
+                    medical_record.save()
+
+    def get_enhanced_sample_diagnosis(self, appointment_type):
+        """Enhanced diagnosis samples"""
+        diagnoses = {
+            "consultation": [
+                "Patient presents with general fatigue and mild headaches. Physical examination reveals no acute abnormalities. Blood pressure within normal limits.",
+                "Routine consultation for preventive care. Patient reports no significant health concerns. Recommended annual screenings up to date.",
+                "Patient complains of occasional back pain. Examination shows mild muscle tension. No signs of serious pathology detected.",
+            ],
+            "follow_up": [
+                "Follow-up visit shows significant improvement in previously reported symptoms. Patient compliance with medication regimen excellent.",
+                "Continued monitoring of chronic condition. Lab results show improvement. Patient responding well to current treatment plan.",
+                "Follow-up assessment demonstrates stable condition. No new symptoms reported. Continue current management approach.",
+            ],
+            "checkup": [
+                "Annual physical examination completed. All vital signs within normal range. Patient in good general health.",
+                "Comprehensive health screening performed. No significant abnormalities detected. Preventive care recommendations provided.",
+                "Routine wellness visit. Patient maintains healthy lifestyle. All screening tests current and normal.",
+            ],
+            "physical_therapy": [
+                "Physical therapy session focused on range of motion exercises. Patient shows gradual improvement in mobility.",
+                "Continued rehabilitation program. Strength and flexibility measurements show positive progress.",
+                "Therapeutic exercises performed. Patient demonstrates good compliance with home exercise program.",
+            ],
+        }
+
+        diagnosis_list = diagnoses.get(
+            appointment_type, ["General consultation completed."]
+        )
+        return diagnosis_list[hash(appointment_type) % len(diagnosis_list)]
+
+    def get_enhanced_sample_treatment(self, appointment_type):
+        """Enhanced treatment samples"""
+        treatments = {
+            "consultation": [
+                "Recommended lifestyle modifications including regular exercise and stress management techniques. Advised adequate rest and hydration.",
+                "Patient education provided on symptom management. Recommended follow-up if symptoms persist or worsen.",
+                "Conservative management approach advised. Heat therapy and gentle stretching exercises recommended.",
+            ],
+            "follow_up": [
+                "Continue current medication regimen with dosage adjustment as needed. Monitor symptoms closely.",
+                "Treatment plan proving effective. No changes needed at this time. Continue current approach.",
+                "Medication compliance excellent. Consider gradual dose reduction if improvement continues.",
+            ],
+            "checkup": [
+                "No treatment required at this time. Continue current healthy lifestyle practices.",
+                "Preventive care measures discussed. Immunizations updated as needed.",
+                "Health maintenance counseling provided. Continue regular exercise and balanced diet.",
+            ],
+            "physical_therapy": [
+                "Progressive exercise program advanced to next level. Home exercises modified accordingly.",
+                "Continue current rehabilitation protocol. Additional strengthening exercises introduced.",
+                "Therapeutic modalities applied. Patient education on injury prevention techniques provided.",
+            ],
+        }
+
+        treatment_list = treatments.get(
+            appointment_type, ["Treatment plan discussed with patient."]
+        )
+        return treatment_list[
+            hash(appointment_type + "treatment") % len(treatment_list)
+        ]
+
+    def get_enhanced_sample_prescription(self, appointment_type):
+        """Enhanced prescription samples"""
+        prescriptions = {
+            "consultation": [
+                "Ibuprofen 400mg, take as needed for pain, maximum 3 times daily with food.",
+                "Multivitamin supplement, one tablet daily with breakfast.",
+                "",  # No prescription needed
+            ],
+            "follow_up": [
+                "Continue current medications as prescribed. Metformin 500mg twice daily with meals.",
+                "Lisinopril 10mg daily in the morning. Monitor blood pressure regularly.",
+                "Omeprazole 20mg daily before breakfast for acid reflux symptoms.",
+            ],
+            "checkup": [
+                "",  # Usually no prescription for routine checkups
+                "Vitamin D3 1000 IU daily for overall health maintenance.",
+                "",
+            ],
+            "physical_therapy": [
+                "Topical anti-inflammatory gel, apply to affected area twice daily.",
+                "Acetaminophen 500mg as needed for pain, maximum 4 times daily.",
+                "",
+            ],
+        }
+
+        prescription_list = prescriptions.get(appointment_type, [""])
+        return prescription_list[
+            hash(appointment_type + "prescription") % len(prescription_list)
+        ]
