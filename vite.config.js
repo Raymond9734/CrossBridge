@@ -7,7 +7,6 @@ export default defineConfig({
     base: "/static/",
     plugins: [
         react({
-            // Add JSX runtime import
             fastRefresh: false,
             jsxImportSource: 'react'
         })
@@ -29,4 +28,7 @@ export default defineConfig({
             input: resolve("./app/static/src/main.jsx"),
         },
     },
+    css: {
+        postcss: './postcss.config.js',
+    }
 });
