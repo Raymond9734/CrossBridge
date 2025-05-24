@@ -9,7 +9,8 @@ const AppointmentsList = ({ userRole, showToast }) => {
   const [filteredAppointments, setFilteredAppointments] = useState([]);
   
   // Get appointments from Inertia.js props
-  const { appointments = [] } = usePage().props;
+  const props = usePage().props;
+  const appointments = props.appointments_list || props.appointments || [];
   
   // Filter appointments when data, filter, or search changes
   useEffect(() => {
@@ -31,7 +32,8 @@ const AppointmentsList = ({ userRole, showToast }) => {
       search: searchTerm || '' 
     }, { 
       preserveState: true,
-      preserveScroll: true 
+      preserveScroll: true,
+      only: ['appointments_list'] // Only reload appointments data
     });
   };
 
@@ -45,9 +47,36 @@ const AppointmentsList = ({ userRole, showToast }) => {
         search: newSearch 
       }, { 
         preserveState: true,
-        preserveScroll: true 
+        preserveScroll: true,
+        only: ['appointments_list'] // Only reload appointments data
       });
     }, 500);
+  };
+
+  const handleViewAppointment = (appointmentId) => {
+    showToast('Appointment details modal coming soon', 'info');
+    // TODO: Implement appointment details modal
+  };
+
+  const handleEditAppointment = (appointmentId) => {
+    showToast('Edit appointment functionality coming soon', 'info');
+    // TODO: Implement edit appointment functionality
+  };
+
+  const handleCancelAppointment = (appointmentId) => {
+    if (!confirm('Are you sure you want to cancel this appointment?')) return;
+    
+    // TODO: Implement cancel appointment
+    router.post('/api/appointments/cancel/', {
+      appointment_id: appointmentId
+    }, {
+      onSuccess: () => {
+        showToast('Appointment cancelled successfully', 'success');
+      },
+      onError: () => {
+        showToast('Failed to cancel appointment', 'error');
+      }
+    });
   };
   
   return (
@@ -135,6 +164,8 @@ const AppointmentsList = ({ userRole, showToast }) => {
                         ? 'bg-yellow-100 text-yellow-800'
                         : appointment.status === 'completed'
                         ? 'bg-blue-100 text-blue-800'
+                        : appointment.status === 'cancelled'
+                        ? 'bg-red-100 text-red-800'
                         : 'bg-gray-100 text-gray-800'
                     }`}>
                       {appointment.status}
@@ -144,22 +175,26 @@ const AppointmentsList = ({ userRole, showToast }) => {
                     <div className="flex gap-2">
                       <button 
                         className="text-teal-600 hover:text-teal-900"
-                        onClick={() => showToast('View appointment details coming soon', 'info')}
+                        onClick={() => handleViewAppointment(appointment.id)}
                       >
                         View
                       </button>
-                      <button 
-                        className="text-blue-600 hover:text-blue-900"
-                        onClick={() => showToast('Edit appointment coming soon', 'info')}
-                      >
-                        Edit
-                      </button>
-                      <button 
-                        className="text-red-600 hover:text-red-900"
-                        onClick={() => showToast('Cancel appointment coming soon', 'info')}
-                      >
-                        Cancel
-                      </button>
+                      {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                        <>
+                          <button 
+                            className="text-blue-600 hover:text-blue-900"
+                            onClick={() => handleEditAppointment(appointment.id)}
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            className="text-red-600 hover:text-red-900"
+                            onClick={() => handleCancelAppointment(appointment.id)}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
