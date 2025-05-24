@@ -29,7 +29,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
 
     const fetchDoctors = async () => {
         try {
-            const response = await fetch('/api/doctors/');
+            const response = await fetch('/api/available-doctors/');
             const data = await response.json();
             setDoctors(data.doctors || []);
         } catch (error) {
@@ -121,7 +121,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
                 disabled={doctors.length === 0}
               >
                 <option value="">
-                  {doctors.length === 0 ? 'Loading doctors...' : 'Choose a doctor'}
+                  {doctors.length === 0 ? 'No available doctor' : 'Choose a doctor'}
                 </option>
                 {doctors.map(doctor => (
                   <option key={doctor.id} value={doctor.name} disabled={!doctor.available}>
