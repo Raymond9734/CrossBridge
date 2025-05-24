@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { CheckCircle, AlertCircle, Info } from 'lucide-react';
+import React, {  useEffect } from 'react';
+import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
 
 // Toast Notification Component
 const Toast = ({ message, type, isVisible, onClose }) => {
