@@ -16,182 +16,7 @@ from .models import (
     MedicalRecord,
     Notification,
 )
-
-
-def index(request):
-    """Main dashboard - redirects based on authentication"""
-    if not request.user.is_authenticated:
-        return redirect("login")
-
-    # Get user profile and related data
-    user_profile = get_object_or_404(UserProfile, user=request.user)
-
-    # Prepare dashboard data based on user role
-    if user_profile.role == "doctor":
-        dashboard_data = get_doctor_dashboard_data(request.user)
-    else:
-        dashboard_data = get_patient_dashboard_data(request.user)
-
-    return inertia_render(request, "Index", props=dashboard_data)
-
-
-def get_patient_dashboard_data(user):
-    """Get dashboard data for patients"""
-    # Get upcoming appointments
-    upcoming_appointments = (
-        Appointment.objects.filter(
-            patient=user,
-            appointment_date__gte=timezone.now().date(),
-            status__in=["pending", "confirmed"],
-        )
-        .select_related("doctor", "doctor__userprofile")
-        .order_by("appointment_date", "start_time")[:5]
-    )
-
-    # Get recent medical records
-    recent_records = (
-        MedicalRecord.objects.filter(appointment__patient=user)
-        .select_related("appointment", "appointment__doctor")
-        .order_by("-created_at")[:5]
-    )
-
-    # Format appointments for frontend
-    appointments_data = []
-    for apt in upcoming_appointments:
-        appointments_data.append(
-            {
-                "id": apt.id,
-                "doctor": f"Dr. {apt.doctor.get_full_name()}",
-                "type": apt.get_appointment_type_display(),
-                "date": apt.appointment_date.strftime("%Y-%m-%d"),
-                "time": apt.start_time.strftime("%I:%M %p"),
-                "status": apt.status,
-            }
-        )
-
-    # Format medical records
-    records_data = []
-    for record in recent_records:
-        records_data.append(
-            {
-                "id": record.id,
-                "title": (
-                    record.diagnosis[:50] + "..."
-                    if len(record.diagnosis) > 50
-                    else record.diagnosis or "General Consultation"
-                ),
-                "doctor": f"Dr. {record.appointment.doctor.get_full_name()}",
-                "date": record.created_at.strftime("%B %d, %Y"),
-            }
-        )
-
-    # Get statistics
-    total_appointments = Appointment.objects.filter(patient=user).count()
-    completed_appointments = Appointment.objects.filter(
-        patient=user, status="completed"
-    ).count()
-    pending_appointments = upcoming_appointments.count()
-
-    return {
-        "user": {
-            "id": user.id,
-            "name": user.get_full_name(),
-            "email": user.email,
-            "role": "patient",
-        },
-        "stats": {
-            "upcoming_appointments": pending_appointments,
-            "completed_visits": completed_appointments,
-            "total_appointments": total_appointments,
-        },
-        "appointments": appointments_data,
-        "medical_records": records_data,
-    }
-
-
-def get_doctor_dashboard_data(user):
-    """Get dashboard data for doctors"""
-    today = timezone.now().date()
-
-    # Get today's appointments
-    todays_appointments = (
-        Appointment.objects.filter(
-            doctor=user,
-            appointment_date=today,
-            status__in=["pending", "confirmed", "in_progress"],
-        )
-        .select_related("patient", "patient__userprofile")
-        .order_by("start_time")
-    )
-
-    # Get recent patients
-    recent_patients = (
-        User.objects.filter(
-            patient_appointments__doctor=user, patient_appointments__status="completed"
-        )
-        .distinct()
-        .select_related("userprofile")[:5]
-    )
-
-    # Format today's appointments
-    appointments_data = []
-    for apt in todays_appointments:
-        appointments_data.append(
-            {
-                "id": apt.id,
-                "patient": apt.patient.get_full_name(),
-                "type": apt.get_appointment_type_display(),
-                "time": apt.start_time.strftime("%I:%M %p"),
-                "status": apt.status,
-            }
-        )
-
-    # Format recent patients
-    patients_data = []
-    for patient in recent_patients:
-        last_appointment = (
-            Appointment.objects.filter(patient=patient, doctor=user, status="completed")
-            .order_by("-appointment_date")
-            .first()
-        )
-
-        patients_data.append(
-            {
-                "id": patient.id,
-                "name": patient.get_full_name(),
-                "age": patient.userprofile.age or "N/A",
-                "last_visit": (
-                    last_appointment.appointment_date.strftime("%Y-%m-%d")
-                    if last_appointment
-                    else "N/A"
-                ),
-            }
-        )
-
-    # Get statistics
-    todays_count = todays_appointments.count()
-    total_patients = (
-        User.objects.filter(patient_appointments__doctor=user).distinct().count()
-    )
-    pending_reviews = MedicalRecord.objects.filter(
-        appointment__doctor=user, diagnosis=""
-    ).count()
-
-    return {
-        "user": {
-            "id": user.id,
-            "name": user.get_full_name(),
-            "email": user.email,
-            "role": "doctor",
-        },
-        "stats": {
-            "todays_appointments": todays_count,
-            "total_patients": total_patients,
-            "pending_reviews": pending_reviews,
-        },
-        "appointments": appointments_data,
-        "patients": patients_data,
-    }
+from django.db import models
 
 
 def login_view(request):
@@ -253,7 +78,7 @@ def login_view(request):
                 "Login",
                 props={"errors": {"general": "Invalid request format"}},
             )
-        except Exception as e:
+        except Exception:
             return inertia_render(
                 request,
                 "Login",
@@ -340,7 +165,7 @@ def register_view(request):
                 login(request, user)
                 return redirect("index")
 
-            except Exception as e:
+            except Exception:
                 return inertia_render(
                     request,
                     "Register",
@@ -404,7 +229,7 @@ def profile_view(request):
                 {"success": True, "message": "Profile updated successfully"}
             )
 
-        except Exception as e:
+        except Exception:
             return JsonResponse({"success": False, "error": "Failed to update profile"})
 
     # GET request - return current profile data
@@ -583,7 +408,7 @@ def book_appointment_view(request):
                 {"success": True, "message": "Appointment booked successfully!"}
             )
 
-        except Exception as e:
+        except Exception:
             return JsonResponse(
                 {"success": False, "errors": {"general": "Failed to book appointment"}}
             )
@@ -670,13 +495,749 @@ def get_available_slots(request):
 
         return JsonResponse({"slots": slots})
 
-    except Exception as e:
+    except Exception:
         return JsonResponse({"slots": []})
 
 
-def about(request):
-    """About page with loading indicator demo"""
-    from time import sleep
+def get_patient_dashboard_data(user):
+    """Get dashboard data for patients"""
+    # Get upcoming appointments
+    upcoming_appointments = (
+        Appointment.objects.filter(
+            patient=user,
+            appointment_date__gte=timezone.now().date(),
+            status__in=["pending", "confirmed"],
+        )
+        .select_related("doctor", "doctor__userprofile")
+        .order_by("appointment_date", "start_time")[:5]
+    )
 
-    sleep(1)  # Reduced from 2.5 seconds for better UX
-    return inertia_render(request, "About", props={"pageName": "About"})
+    # Get recent medical records
+    recent_records = (
+        MedicalRecord.objects.filter(appointment__patient=user)
+        .select_related("appointment", "appointment__doctor")
+        .order_by("-created_at")[:5]
+    )
+
+    # Format appointments for frontend
+    appointments_data = []
+    for apt in upcoming_appointments:
+        appointments_data.append(
+            {
+                "id": apt.id,
+                "doctor": f"Dr. {apt.doctor.get_full_name()}",
+                "type": apt.get_appointment_type_display(),
+                "date": apt.appointment_date.strftime("%Y-%m-%d"),
+                "time": apt.start_time.strftime("%I:%M %p"),
+                "status": apt.status,
+            }
+        )
+
+    # Format medical records for the medical records component
+    medical_records_data = []
+    for record in recent_records:
+        medical_records_data.append(
+            {
+                "id": record.id,
+                "date": record.created_at.isoformat(),
+                "doctor_name": f"Dr. {record.appointment.doctor.get_full_name()}",
+                "appointment_type": record.appointment.get_appointment_type_display(),
+                "diagnosis": record.diagnosis,
+                "treatment": record.treatment,
+                "prescription": record.prescription,
+                "lab_results": record.lab_results,
+                "follow_up_required": record.follow_up_required,
+                "follow_up_date": (
+                    record.follow_up_date.isoformat() if record.follow_up_date else None
+                ),
+                "blood_pressure": (
+                    f"{record.blood_pressure_systolic}/{record.blood_pressure_diastolic}"
+                    if record.blood_pressure_systolic
+                    and record.blood_pressure_diastolic
+                    else None
+                ),
+                "heart_rate": record.heart_rate,
+                "temperature": str(record.temperature) if record.temperature else None,
+                "weight": str(record.weight) if record.weight else None,
+            }
+        )
+
+    # Format simplified medical records for dashboard
+    records_data = []
+    for record in recent_records:
+        records_data.append(
+            {
+                "id": record.id,
+                "title": (
+                    record.diagnosis[:50] + "..."
+                    if record.diagnosis and len(record.diagnosis) > 50
+                    else record.diagnosis or "General Consultation"
+                ),
+                "doctor": f"Dr. {record.appointment.doctor.get_full_name()}",
+                "date": record.created_at.strftime("%B %d, %Y"),
+            }
+        )
+
+    # Get statistics
+    total_appointments = Appointment.objects.filter(patient=user).count()
+    completed_appointments = Appointment.objects.filter(
+        patient=user, status="completed"
+    ).count()
+    pending_appointments = upcoming_appointments.count()
+
+    return {
+        "user": {
+            "id": user.id,
+            "name": user.get_full_name(),
+            "email": user.email,
+            "role": "patient",
+        },
+        "stats": {
+            "upcoming_appointments": pending_appointments,
+            "completed_visits": completed_appointments,
+            "total_appointments": total_appointments,
+        },
+        "appointments": appointments_data,
+        "medical_records": records_data,
+        "medical_records_detailed": medical_records_data,  # For the medical records component
+    }
+
+
+def get_doctor_dashboard_data(user):
+    """Get dashboard data for doctors"""
+    today = timezone.now().date()
+
+    # Get today's appointments
+    todays_appointments = (
+        Appointment.objects.filter(
+            doctor=user,
+            appointment_date=today,
+            status__in=["pending", "confirmed", "in_progress"],
+        )
+        .select_related("patient", "patient__userprofile")
+        .order_by("start_time")
+    )
+
+    # Get recent patients with more details
+    recent_patients_query = (
+        Appointment.objects.filter(doctor=user, status="completed")
+        .values("patient")
+        .annotate(
+            last_appointment_date=models.Max("appointment_date"),
+            total_appointments=models.Count("id"),
+        )
+        .order_by("-last_appointment_date")[:10]
+    )
+
+    # Get detailed patient information
+    patients_data = []
+    for patient_data in recent_patients_query:
+        try:
+            patient = User.objects.get(id=patient_data["patient"])
+            patient_profile = patient.userprofile
+
+            patients_data.append(
+                {
+                    "id": patient.id,
+                    "name": patient.get_full_name(),
+                    "email": patient.email,
+                    "phone": patient_profile.phone,
+                    "age": patient_profile.age,
+                    "date_of_birth": (
+                        patient_profile.date_of_birth.isoformat()
+                        if patient_profile.date_of_birth
+                        else None
+                    ),
+                    "gender": (
+                        patient_profile.get_gender_display()
+                        if patient_profile.gender
+                        else None
+                    ),
+                    "address": patient_profile.address,
+                    "emergency_contact": patient_profile.emergency_contact,
+                    "emergency_phone": patient_profile.emergency_phone,
+                    "medical_history": patient_profile.medical_history,
+                    "insurance_info": patient_profile.insurance_info,
+                    "last_visit": (
+                        patient_data["last_appointment_date"].strftime("%Y-%m-%d")
+                        if patient_data["last_appointment_date"]
+                        else None
+                    ),
+                    "total_appointments": patient_data["total_appointments"],
+                    "created_at": patient_profile.created_at.isoformat(),
+                }
+            )
+        except User.DoesNotExist:
+            continue
+
+    # Format today's appointments
+    appointments_data = []
+    for apt in todays_appointments:
+        appointments_data.append(
+            {
+                "id": apt.id,
+                "patient": apt.patient.get_full_name(),
+                "type": apt.get_appointment_type_display(),
+                "time": apt.start_time.strftime("%I:%M %p"),
+                "status": apt.status,
+            }
+        )
+
+    # Get doctor availability (for schedule management)
+    try:
+        doctor_profile = user.userprofile.doctorprofile
+        availability_data = []
+        for avail in doctor_profile.availability.all():
+            availability_data.append(
+                {
+                    "id": avail.id,
+                    "day_of_week": avail.day_of_week,
+                    "start_time": avail.start_time.strftime("%H:%M"),
+                    "end_time": avail.end_time.strftime("%H:%M"),
+                    "is_available": avail.is_available,
+                }
+            )
+    except:
+        availability_data = []
+
+    # Get statistics
+    todays_count = todays_appointments.count()
+    total_patients = (
+        User.objects.filter(patient_appointments__doctor=user).distinct().count()
+    )
+    pending_reviews = MedicalRecord.objects.filter(
+        appointment__doctor=user, diagnosis=""
+    ).count()
+
+    return {
+        "user": {
+            "id": user.id,
+            "name": user.get_full_name(),
+            "email": user.email,
+            "role": "doctor",
+        },
+        "stats": {
+            "todays_appointments": todays_count,
+            "total_patients": total_patients,
+            "pending_reviews": pending_reviews,
+        },
+        "appointments": appointments_data,
+        "patients": patients_data,
+        "doctor_availability": availability_data,
+    }
+
+
+# Update the main index view
+def index(request):
+    """Main dashboard - redirects based on authentication"""
+    if not request.user.is_authenticated:
+        return redirect("login")
+
+    # Get user profile and related data
+    user_profile = get_object_or_404(UserProfile, user=request.user)
+
+    # Prepare dashboard data based on user role
+    if user_profile.role == "doctor":
+        dashboard_data = get_doctor_dashboard_data(request.user)
+    else:
+        dashboard_data = get_patient_dashboard_data(request.user)
+
+    notifications = Notification.objects.filter(
+        user=request.user, is_read=False
+    ).order_by("-created_at")[:10]
+
+    notifications_data = {
+        "unread_count": notifications.count(),
+        "items": [
+            {
+                "id": notif.id,
+                "type": notif.notification_type,
+                "title": notif.title,
+                "message": notif.message,
+                "created_at": notif.created_at.isoformat(),
+                "is_read": notif.is_read,
+            }
+            for notif in notifications
+        ],
+    }
+
+    dashboard_data["notifications"] = notifications_data
+
+    # Add the detailed medical records for the medical records component
+    if user_profile.role == "patient":
+        dashboard_data["medical_records"] = dashboard_data.get(
+            "medical_records_detailed", []
+        )
+
+    return inertia_render(request, "Index", props=dashboard_data)
+
+
+# Add new endpoints for the enhanced functionality
+@login_required
+def medical_records_view(request):
+    """Get detailed medical records for patient"""
+    user_profile = get_object_or_404(UserProfile, user=request.user)
+
+    if user_profile.role != "patient":
+        return JsonResponse({"error": "Access denied"}, status=403)
+
+    # Get all medical records
+    records = (
+        MedicalRecord.objects.filter(appointment__patient=request.user)
+        .select_related("appointment", "appointment__doctor")
+        .order_by("-created_at")
+    )
+
+    records_data = []
+    for record in records:
+        records_data.append(
+            {
+                "id": record.id,
+                "date": record.created_at.isoformat(),
+                "doctor_name": f"Dr. {record.appointment.doctor.get_full_name()}",
+                "appointment_type": record.appointment.get_appointment_type_display(),
+                "diagnosis": record.diagnosis,
+                "treatment": record.treatment,
+                "prescription": record.prescription,
+                "lab_results": record.lab_results,
+                "follow_up_required": record.follow_up_required,
+                "follow_up_date": (
+                    record.follow_up_date.isoformat() if record.follow_up_date else None
+                ),
+                "blood_pressure": (
+                    f"{record.blood_pressure_systolic}/{record.blood_pressure_diastolic}"
+                    if record.blood_pressure_systolic
+                    and record.blood_pressure_diastolic
+                    else None
+                ),
+                "heart_rate": record.heart_rate,
+                "temperature": str(record.temperature) if record.temperature else None,
+                "weight": str(record.weight) if record.weight else None,
+            }
+        )
+
+    return JsonResponse({"medical_records": records_data})
+
+
+@login_required
+def doctor_availability_view(request):
+    """Get doctor availability for schedule management"""
+
+    user_profile = get_object_or_404(UserProfile, user=request.user)
+
+    if user_profile.role != "doctor":
+        return JsonResponse({"error": "Access denied"}, status=403)
+
+    doctor_profile = user_profile.doctorprofile
+    availability_data = []
+    for avail in doctor_profile.availability.all():
+        availability_data.append(
+            {
+                "id": avail.id,
+                "day_of_week": avail.day_of_week,
+                "start_time": avail.start_time.strftime("%H:%M"),
+                "end_time": avail.end_time.strftime("%H:%M"),
+                "is_available": avail.is_available,
+            }
+        )
+
+    return JsonResponse({"doctor_availability": availability_data})
+
+
+@login_required
+def patients_list_view(request):
+    """Get patients list for doctor"""
+    user_profile = get_object_or_404(UserProfile, user=request.user)
+
+    if user_profile.role != "doctor":
+        return JsonResponse({"error": "Access denied"}, status=403)
+
+    # Get patients who have appointments with this doctor
+    patients_query = (
+        Appointment.objects.filter(doctor=request.user)
+        .values("patient")
+        .annotate(
+            last_appointment_date=models.Max("appointment_date"),
+            total_appointments=models.Count("id"),
+        )
+        .order_by("-last_appointment_date")
+    )
+
+    patients_data = []
+    for patient_data in patients_query:
+        try:
+            patient = User.objects.get(id=patient_data["patient"])
+            patient_profile = patient.userprofile
+
+            patients_data.append(
+                {
+                    "id": patient.id,
+                    "name": patient.get_full_name(),
+                    "email": patient.email,
+                    "phone": patient_profile.phone,
+                    "age": patient_profile.age,
+                    "date_of_birth": (
+                        patient_profile.date_of_birth.isoformat()
+                        if patient_profile.date_of_birth
+                        else None
+                    ),
+                    "gender": (
+                        patient_profile.get_gender_display()
+                        if patient_profile.gender
+                        else None
+                    ),
+                    "address": patient_profile.address,
+                    "emergency_contact": patient_profile.emergency_contact,
+                    "emergency_phone": patient_profile.emergency_phone,
+                    "medical_history": patient_profile.medical_history,
+                    "insurance_info": patient_profile.insurance_info,
+                    "last_visit": (
+                        patient_data["last_appointment_date"].strftime("%Y-%m-%d")
+                        if patient_data["last_appointment_date"]
+                        else None
+                    ),
+                    "total_appointments": patient_data["total_appointments"],
+                    "created_at": patient_profile.created_at.isoformat(),
+                }
+            )
+        except User.DoesNotExist:
+            continue
+
+    return JsonResponse({"patients": patients_data})
+
+
+# Add this to your views.py, replacing the existing doctor_availability_view
+
+
+@login_required
+def doctor_availability_view(request):
+    """Handle doctor availability - GET, POST, PUT, DELETE"""
+    user_profile = get_object_or_404(UserProfile, user=request.user)
+
+    if user_profile.role != "doctor":
+        return JsonResponse({"error": "Access denied"}, status=403)
+
+    try:
+        doctor_profile = user_profile.doctorprofile
+    except:
+        return JsonResponse({"error": "Doctor profile not found"}, status=404)
+
+    if request.method == "GET":
+        # Return existing availability
+        availability_data = []
+        for avail in doctor_profile.availability.all():
+            availability_data.append(
+                {
+                    "id": avail.id,
+                    "day_of_week": avail.day_of_week,
+                    "start_time": avail.start_time.strftime("%H:%M"),
+                    "end_time": avail.end_time.strftime("%H:%M"),
+                    "is_available": avail.is_available,
+                }
+            )
+
+        return JsonResponse({"doctor_availability": availability_data})
+
+    elif request.method == "POST":
+        # Create new availability slot
+        try:
+            data = json.loads(request.body)
+
+            day_of_week = data.get("day_of_week")
+            start_time = data.get("start_time")
+            end_time = data.get("end_time")
+            is_available = data.get("is_available", True)
+
+            # Validation
+            errors = {}
+            if day_of_week is None or day_of_week == "":
+                errors["day_of_week"] = "Day of week is required"
+            elif not (0 <= int(day_of_week) <= 6):
+                errors["day_of_week"] = "Invalid day of week"
+
+            if not start_time:
+                errors["start_time"] = "Start time is required"
+            if not end_time:
+                errors["end_time"] = "End time is required"
+
+            # Parse and validate times
+            try:
+                from datetime import datetime, time
+
+                start_time_obj = datetime.strptime(start_time, "%H:%M").time()
+                end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+
+                if start_time_obj >= end_time_obj:
+                    errors["end_time"] = "End time must be after start time"
+
+            except ValueError:
+                errors["time"] = "Invalid time format. Use HH:MM format"
+
+            if errors:
+                return JsonResponse({"success": False, "errors": errors}, status=400)
+
+            # Check for overlapping availability on the same day
+            overlapping = DoctorAvailability.objects.filter(
+                doctor=doctor_profile, day_of_week=day_of_week
+            )
+
+            for existing in overlapping:
+                if (
+                    start_time_obj < existing.end_time
+                    and end_time_obj > existing.start_time
+                ):
+                    return JsonResponse(
+                        {
+                            "success": False,
+                            "errors": {
+                                "general": "This time slot overlaps with existing availability"
+                            },
+                        },
+                        status=400,
+                    )
+
+            # Create the availability slot
+            availability = DoctorAvailability.objects.create(
+                doctor=doctor_profile,
+                day_of_week=int(day_of_week),
+                start_time=start_time_obj,
+                end_time=end_time_obj,
+                is_available=is_available,
+            )
+
+            return JsonResponse(
+                {
+                    "success": True,
+                    "message": "Availability added successfully",
+                    "availability": {
+                        "id": availability.id,
+                        "day_of_week": availability.day_of_week,
+                        "start_time": availability.start_time.strftime("%H:%M"),
+                        "end_time": availability.end_time.strftime("%H:%M"),
+                        "is_available": availability.is_available,
+                    },
+                }
+            )
+
+        except json.JSONDecodeError:
+            return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    elif request.method == "PUT":
+        # Update existing availability slot
+        try:
+            data = json.loads(request.body)
+            availability_id = data.get("id")
+
+            if not availability_id:
+                return JsonResponse(
+                    {"success": False, "error": "Availability ID is required"},
+                    status=400,
+                )
+
+            availability = get_object_or_404(
+                DoctorAvailability, id=availability_id, doctor=doctor_profile
+            )
+
+            # Update fields if provided
+            if "is_available" in data:
+                availability.is_available = data["is_available"]
+
+            if "start_time" in data and "end_time" in data:
+                try:
+                    start_time_obj = datetime.strptime(
+                        data["start_time"], "%H:%M"
+                    ).time()
+                    end_time_obj = datetime.strptime(data["end_time"], "%H:%M").time()
+
+                    if start_time_obj >= end_time_obj:
+                        return JsonResponse(
+                            {
+                                "success": False,
+                                "errors": {
+                                    "end_time": "End time must be after start time"
+                                },
+                            },
+                            status=400,
+                        )
+
+                    availability.start_time = start_time_obj
+                    availability.end_time = end_time_obj
+
+                except ValueError:
+                    return JsonResponse(
+                        {"success": False, "errors": {"time": "Invalid time format"}},
+                        status=400,
+                    )
+
+            availability.save()
+
+            return JsonResponse(
+                {
+                    "success": True,
+                    "message": "Availability updated successfully",
+                    "availability": {
+                        "id": availability.id,
+                        "day_of_week": availability.day_of_week,
+                        "start_time": availability.start_time.strftime("%H:%M"),
+                        "end_time": availability.end_time.strftime("%H:%M"),
+                        "is_available": availability.is_available,
+                    },
+                }
+            )
+
+        except json.JSONDecodeError:
+            return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    elif request.method == "DELETE":
+        # Delete availability slot
+        try:
+            data = json.loads(request.body)
+            availability_id = data.get("id")
+
+            if not availability_id:
+                return JsonResponse(
+                    {"success": False, "error": "Availability ID is required"},
+                    status=400,
+                )
+
+            availability = get_object_or_404(
+                DoctorAvailability, id=availability_id, doctor=doctor_profile
+            )
+            availability.delete()
+
+            return JsonResponse(
+                {"success": True, "message": "Availability deleted successfully"}
+            )
+
+        except json.JSONDecodeError:
+            return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@login_required
+def toggle_availability_view(request):
+    """Toggle availability status for a specific slot"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    user_profile = get_object_or_404(UserProfile, user=request.user)
+    if user_profile.role != "doctor":
+        return JsonResponse({"error": "Access denied"}, status=403)
+
+    try:
+        doctor_profile = user_profile.doctorprofile
+        data = json.loads(request.body)
+        availability_id = data.get("id")
+
+        if not availability_id:
+            return JsonResponse(
+                {"success": False, "error": "Availability ID is required"}, status=400
+            )
+
+        availability = get_object_or_404(
+            DoctorAvailability, id=availability_id, doctor=doctor_profile
+        )
+        availability.is_available = not availability.is_available
+        availability.save()
+
+        return JsonResponse(
+            {
+                "success": True,
+                "message": f"Availability {'enabled' if availability.is_available else 'disabled'}",
+                "is_available": availability.is_available,
+            }
+        )
+
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+# Add a view to get day names for the frontend
+@login_required
+def get_days_of_week(request):
+    """Get days of week for frontend dropdown"""
+    days = [
+        {"id": 0, "name": "Monday"},
+        {"id": 1, "name": "Tuesday"},
+        {"id": 2, "name": "Wednesday"},
+        {"id": 3, "name": "Thursday"},
+        {"id": 4, "name": "Friday"},
+        {"id": 5, "name": "Saturday"},
+        {"id": 6, "name": "Sunday"},
+    ]
+    return JsonResponse({"days": days})
+
+
+@login_required
+def cancel_appointment_view(request):
+    """Cancel an appointment"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        appointment_id = data.get("appointment_id")
+
+        if not appointment_id:
+            return JsonResponse(
+                {"success": False, "error": "Appointment ID is required"}, status=400
+            )
+
+        # Get appointment - ensure user has permission to cancel it
+        appointment = get_object_or_404(
+            Appointment.objects.filter(
+                Q(patient=request.user) | Q(doctor=request.user)
+            ),
+            id=appointment_id,
+        )
+
+        # Check if appointment can be cancelled
+        if appointment.status in ["completed", "cancelled"]:
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "Cannot cancel a completed or already cancelled appointment",
+                },
+                status=400,
+            )
+
+        # Update appointment status
+        appointment.status = "cancelled"
+        appointment.save()
+
+        # Create notification for the other party
+        if appointment.patient == request.user:
+            # Patient cancelled, notify doctor
+            other_user = appointment.doctor
+            message = f"Patient {request.user.get_full_name()} has cancelled their appointment on {appointment.appointment_date}"
+        else:
+            # Doctor cancelled, notify patient
+            other_user = appointment.patient
+            message = f"Dr. {request.user.get_full_name()} has cancelled your appointment on {appointment.appointment_date}"
+
+        Notification.objects.create(
+            user=other_user,
+            notification_type="appointment_cancelled",
+            title="Appointment Cancelled",
+            message=message,
+            appointment=appointment,
+        )
+
+        return JsonResponse(
+            {"success": True, "message": "Appointment cancelled successfully"}
+        )
+
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
