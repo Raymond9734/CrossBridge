@@ -1,6 +1,6 @@
 # Updated app/urls.py - add these to your existing urlpatterns
 from django.urls import path
-from . import views
+from ..management.command import views
 
 urlpatterns = [
     # Main dashboard
