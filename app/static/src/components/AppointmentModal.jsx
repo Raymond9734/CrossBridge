@@ -29,7 +29,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
 
     const fetchDoctors = async () => {
         try {
-            const response = await fetch('/api/available-doctors/');
+            const response = await fetch('/api/v1/available-doctors/');
             const data = await response.json();
             setDoctors(data.doctors || []);
         } catch (error) {
@@ -87,7 +87,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
           };
   
           // Use fetch instead of router.post for API endpoint
-          const response = await fetch('/api/book-appointment/', {
+          const response = await fetch('/api/v1/book-appointment/', {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
