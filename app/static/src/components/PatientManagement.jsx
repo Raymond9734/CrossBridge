@@ -380,7 +380,7 @@ const PatientManagement = ({ showToast }) => {
           {filteredPatients.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredPatients.map(patient => (
-                <div key={patient.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                <div key={patient.id * Math.random(40)} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
                       <User className="w-5 h-5 text-teal-600" />
