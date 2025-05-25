@@ -492,6 +492,7 @@ class AppointmentBookingViewSet(BaseAPIViewSet):
                         "id": doctor_profile.user_profile.user.id,
                         "name": f"Dr. {doctor_profile.user_profile.user.get_full_name()}",
                         "specialty": doctor_profile.specialty,
+                        "available": doctor_profile.is_available,
                         "rating": float(doctor_profile.rating),
                         "consultation_fee": (
                             float(doctor_profile.consultation_fee)
