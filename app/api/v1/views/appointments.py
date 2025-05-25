@@ -25,7 +25,6 @@ from app.appointment.serializers import (
 )
 from app.appointment.services import AppointmentService
 from app.core.permissions import (
-    IsPatient,
     IsDoctorOrPatient,
     AppointmentBookingThrottle,
 )
@@ -84,10 +83,14 @@ class AppointmentViewSet(BaseModelViewSet):
                         "id": apt.id,
                         "patient": apt.patient.get_full_name(),
                         "doctor": f"Dr. {apt.doctor.get_full_name()}",
+                        "doctor_id": apt.doctor.id,  # ADD THIS - needed for reschedule
                         "date": apt.appointment_date.strftime("%Y-%m-%d"),
                         "time": apt.start_time.strftime("%I:%M %p"),
                         "type": apt.get_appointment_type_display(),
                         "status": apt.status,
+                        "patient_notes": apt.patient_notes,
+                        "can_be_cancelled": apt.can_be_cancelled,
+                        "has_medical_record": hasattr(apt, "medical_record"),
                     }
                 )
 
@@ -96,75 +99,53 @@ class AppointmentViewSet(BaseModelViewSet):
         except Exception as e:
             return self.handle_exception(e, "Unable to load appointments")
 
-    @action(detail=False, methods=["post"])
-    def book(self, request):
-        """Book a new appointment."""
+    # Also fix upcoming and history methods
+    @action(detail=False, methods=["get"])
+    def upcoming(self, request):
+        """Get upcoming appointments for current user."""
         try:
-            appointment_service = AppointmentService()
+            from django.utils import timezone
 
-            doctor_name = request.data.get("doctor")
-            appointment_date = request.data.get("date")
-            appointment_time = request.data.get("time")
-            appointment_type = request.data.get("type")
-            notes = request.data.get("notes", "")
+            profile = self.get_user_profile()
+            if not profile:
+                return self.error_response("User profile not found", status_code=404)
 
-            # Find doctor
-            try:
-                # Extract name from "Dr. FirstName LastName" format
-                name_parts = doctor_name.replace("Dr. ", "").split()
-                if len(name_parts) >= 2:
-                    first_name, last_name = name_parts[0], name_parts[1]
-                    doctor_user = User.objects.get(
-                        first_name__icontains=first_name,
-                        last_name__icontains=last_name,
-                        userprofile__role="doctor",
-                    )
-                else:
-                    return self.error_response(
-                        "Invalid doctor name format",
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                    )
-            except User.DoesNotExist:
-                return self.error_response(
-                    "Doctor not found", status_code=status.HTTP_404_NOT_FOUND
+            today = timezone.now().date()
+
+            if profile.role == "doctor":
+                queryset = Appointment.objects.filter(
+                    doctor=request.user,
+                    appointment_date__gte=today,
+                    status__in=["pending", "confirmed"],
+                )
+            else:
+                queryset = Appointment.objects.filter(
+                    patient=request.user,
+                    appointment_date__gte=today,
+                    status__in=["pending", "confirmed"],
                 )
 
-            # Parse date and time
-            try:
-                apt_date = datetime.strptime(appointment_date, "%Y-%m-%d").date()
-                apt_time = datetime.strptime(appointment_time, "%I:%M %p").time()
-            except ValueError:
-                return self.error_response(
-                    "Invalid date or time format",
-                    status_code=status.HTTP_400_BAD_REQUEST,
+            appointments_data = []
+            for apt in queryset.order_by("appointment_date", "start_time")[:10]:
+                appointments_data.append(
+                    {
+                        "id": apt.id,
+                        "patient": apt.patient.get_full_name(),
+                        "doctor": f"Dr. {apt.doctor.get_full_name()}",
+                        "doctor_id": apt.doctor.id,  # ADD THIS
+                        "date": apt.appointment_date.strftime("%Y-%m-%d"),
+                        "time": apt.start_time.strftime("%I:%M %p"),
+                        "type": apt.get_appointment_type_display(),
+                        "status": apt.status,
+                        "notes": apt.patient_notes,
+                        "can_be_cancelled": apt.can_be_cancelled,
+                    }
                 )
 
-            # Map frontend types to model choices
-            type_mapping = {
-                "Consultation": "consultation",
-                "Follow-up": "follow_up",
-                "Checkup": "checkup",
-                "Emergency": "emergency",
-            }
-
-            # Book appointment using service
-            appointment = appointment_service.book_appointment(
-                patient=request.user,
-                doctor_id=doctor_user.id,
-                appointment_date=apt_date,
-                start_time=apt_time,
-                appointment_type=type_mapping.get(appointment_type, "consultation"),
-                patient_notes=notes,
-            )
-
-            return self.success_response(
-                data={"appointment": AppointmentSerializer(appointment).data},
-                message="Appointment booked successfully!",
-                status_code=status.HTTP_201_CREATED,
-            )
+            return self.success_response(data={"appointments": appointments_data})
 
         except Exception as e:
-            return self.handle_exception(e, str(e))
+            return self.handle_exception(e, "Failed to get upcoming appointments")
 
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
@@ -209,6 +190,37 @@ class AppointmentViewSet(BaseModelViewSet):
             return self.handle_exception(e, "Failed to cancel appointment")
 
     @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """Complete an appointment (doctor only)."""
+        try:
+            appointment = self.get_object()
+
+            # Only doctor can complete
+            if request.user != appointment.doctor:
+                return self.error_response(
+                    "Only the doctor can complete appointments",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+
+            # Check if appointment can be completed
+            if appointment.status not in ["confirmed", "in_progress"]:
+                return self.error_response(
+                    "Only confirmed or in-progress appointments can be completed",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Complete the appointment
+            appointment.complete()
+
+            return self.success_response(
+                data={"appointment": AppointmentSerializer(appointment).data},
+                message="Appointment completed successfully",
+            )
+
+        except Exception as e:
+            return self.handle_exception(e, "Failed to complete appointment")
+
+    @action(detail=True, methods=["post"])
     def reschedule(self, request, pk=None):
         """Reschedule an appointment."""
         try:
@@ -216,12 +228,13 @@ class AppointmentViewSet(BaseModelViewSet):
             new_date = request.data.get("new_date")
             new_time = request.data.get("new_time")
 
-            # Check if user can reschedule this appointment
+            # Check permissions
             if request.user not in [appointment.patient, appointment.doctor]:
                 return self.error_response(
                     "Permission denied", status_code=status.HTTP_403_FORBIDDEN
                 )
 
+            # Validate input
             if not new_date or not new_time:
                 return self.error_response(
                     "New date and time are required",
@@ -231,10 +244,10 @@ class AppointmentViewSet(BaseModelViewSet):
             # Parse new date and time
             try:
                 new_apt_date = datetime.strptime(new_date, "%Y-%m-%d").date()
-                new_apt_time = datetime.strptime(new_time, "%I:%M %p").time()
+                new_apt_time = datetime.strptime(new_time, "%H:%M").time()
             except ValueError:
                 return self.error_response(
-                    "Invalid date or time format",
+                    "Invalid date or time format. Use YYYY-MM-DD for date and HH:MM for time",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -245,10 +258,13 @@ class AppointmentViewSet(BaseModelViewSet):
             ):
                 return self.error_response(
                     "Selected time slot is not available",
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=status.HTTP_409_CONFLICT,
                 )
 
             # Update appointment
+            old_date = appointment.appointment_date
+            old_time = appointment.start_time
+
             appointment.appointment_date = new_apt_date
             appointment.start_time = new_apt_time
             # Calculate new end time (30 minutes later)
@@ -259,6 +275,29 @@ class AppointmentViewSet(BaseModelViewSet):
             appointment.end_time = end_datetime.time()
             appointment.save()
 
+            # Send notification
+            try:
+                from app.notification.services import NotificationService
+
+                notification_service = NotificationService()
+
+                # Notify both parties
+                other_user = (
+                    appointment.patient
+                    if request.user == appointment.doctor
+                    else appointment.doctor
+                )
+                notification_service.create_notification(
+                    user=other_user,
+                    notification_type="appointment_rescheduled",
+                    title="Appointment Rescheduled",
+                    message=f"Your appointment has been rescheduled from {old_date.strftime('%B %d, %Y')} at {old_time.strftime('%I:%M %p')} to {new_apt_date.strftime('%B %d, %Y')} at {new_apt_time.strftime('%I:%M %p')}",
+                    appointment=appointment,
+                    priority="normal",
+                )
+            except Exception:
+                pass  # Don't fail reschedule if notification fails
+
             return self.success_response(
                 data={"appointment": AppointmentSerializer(appointment).data},
                 message="Appointment rescheduled successfully",
@@ -266,51 +305,6 @@ class AppointmentViewSet(BaseModelViewSet):
 
         except Exception as e:
             return self.handle_exception(e, "Failed to reschedule appointment")
-
-    @action(detail=False, methods=["get"])
-    def upcoming(self, request):
-        """Get upcoming appointments for current user."""
-        try:
-            from django.utils import timezone
-
-            profile = self.get_user_profile()
-            if not profile:
-                return self.error_response("User profile not found", status_code=404)
-
-            today = timezone.now().date()
-
-            if profile.role == "doctor":
-                queryset = Appointment.objects.filter(
-                    doctor=request.user,
-                    appointment_date__gte=today,
-                    status__in=["pending", "confirmed"],
-                )
-            else:
-                queryset = Appointment.objects.filter(
-                    patient=request.user,
-                    appointment_date__gte=today,
-                    status__in=["pending", "confirmed"],
-                )
-
-            appointments_data = []
-            for apt in queryset.order_by("appointment_date", "start_time")[:10]:
-                appointments_data.append(
-                    {
-                        "id": apt.id,
-                        "patient": apt.patient.get_full_name(),
-                        "doctor": f"Dr. {apt.doctor.get_full_name()}",
-                        "date": apt.appointment_date.strftime("%Y-%m-%d"),
-                        "time": apt.start_time.strftime("%I:%M %p"),
-                        "type": apt.get_appointment_type_display(),
-                        "status": apt.status,
-                        "notes": apt.patient_notes,
-                    }
-                )
-
-            return self.success_response(data={"appointments": appointments_data})
-
-        except Exception as e:
-            return self.handle_exception(e, "Failed to get upcoming appointments")
 
     @action(detail=False, methods=["get"])
     def history(self, request):
@@ -348,11 +342,11 @@ class AppointmentViewSet(BaseModelViewSet):
                         "id": apt.id,
                         "patient": apt.patient.get_full_name(),
                         "doctor": f"Dr. {apt.doctor.get_full_name()}",
+                        "doctor_id": apt.doctor.id,
                         "date": apt.appointment_date.strftime("%Y-%m-%d"),
                         "time": apt.start_time.strftime("%I:%M %p"),
                         "type": apt.get_appointment_type_display(),
                         "status": apt.status,
-                        "notes": apt.patient_notes,
                     }
                 )
 
@@ -371,11 +365,52 @@ class AppointmentViewSet(BaseModelViewSet):
         except Exception as e:
             return self.handle_exception(e, "Failed to get appointment history")
 
+    def update(self, request, pk=None):
+        """Override update to handle appointment modifications safely."""
+        try:
+            appointment = self.get_object()
+
+            # Check permissions
+            if request.user not in [appointment.patient, appointment.doctor]:
+                return self.error_response(
+                    "Permission denied", status_code=status.HTTP_403_FORBIDDEN
+                )
+
+            # Only allow status updates for direct PATCH requests
+            allowed_fields = ["status", "patient_notes", "doctor_notes"]
+
+            # Filter out fields that shouldn't be updated via PATCH
+            update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+
+            if not update_data:
+                return self.error_response(
+                    "No valid fields to update", status_code=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Apply updates
+            for field, value in update_data.items():
+                if hasattr(appointment, field):
+                    setattr(appointment, field, value)
+
+            appointment.save()
+
+            return self.success_response(
+                data={"appointment": AppointmentSerializer(appointment).data},
+                message="Appointment updated successfully",
+            )
+
+        except Exception as e:
+            return self.handle_exception(e, "Failed to update appointment")
+
+    def partial_update(self, request, pk=None):
+        """Handle partial updates (PATCH requests)."""
+        return self.update(request, pk)
+
 
 class AppointmentBookingViewSet(BaseAPIViewSet):
     """ViewSet for appointment booking."""
 
-    permission_classes = [IsPatient]
+    permission_classes = [IsDoctorOrPatient]
     throttle_classes = [AppointmentBookingThrottle]
 
     @action(detail=False, methods=["post"])
@@ -541,3 +576,49 @@ class AppointmentBookingViewSet(BaseAPIViewSet):
 
         except Exception as e:
             return self.handle_exception(e, "Failed to get available slots")
+
+    @action(detail=False, methods=["post"])
+    def toggle_availability(self, request):
+        """Toggle availability status - moved from separate endpoint."""
+        try:
+            user_profile = self.get_user_profile()
+            if not user_profile or user_profile.role != "doctor":
+                return self.error_response(
+                    "Only doctors can toggle availability",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+
+            availability_id = request.data.get("id")
+            if not availability_id:
+                return self.error_response(
+                    "Availability ID is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            doctor_profile = user_profile.doctorprofile
+
+            try:
+                from app.appointment.models import DoctorAvailability
+
+                availability = DoctorAvailability.objects.get(
+                    id=availability_id, doctor=doctor_profile
+                )
+
+                # Toggle availability
+                availability.is_available = not availability.is_available
+                availability.save()
+
+                status_text = "enabled" if availability.is_available else "disabled"
+
+                return self.success_response(
+                    data={"is_available": availability.is_available},
+                    message=f"Availability {status_text} successfully",
+                )
+
+            except DoctorAvailability.DoesNotExist:
+                return self.error_response(
+                    "Availability not found", status_code=status.HTTP_404_NOT_FOUND
+                )
+
+        except Exception as e:
+            return self.handle_exception(e, "Failed to toggle availability")
