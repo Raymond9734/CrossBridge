@@ -119,48 +119,6 @@ class Notification(TimeStampedModel):
         return channels
 
 
-class NotificationTemplate(TimeStampedModel):
-    """Templates for different types of notifications"""
-
-    name = models.CharField(max_length=100, unique=True)
-    notification_type = models.CharField(
-        max_length=30, choices=Notification.NOTIFICATION_TYPES
-    )
-
-    title_template = models.CharField(max_length=200)
-    message_template = models.TextField()
-
-    # Default delivery settings
-    default_send_email = models.BooleanField(default=False)
-    default_send_sms = models.BooleanField(default=False)
-    default_send_push = models.BooleanField(default=True)
-
-    # Template variables documentation
-    available_variables = models.JSONField(
-        default=list, help_text="List of available template variables"
-    )
-
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = "notification_templates"
-
-    def __str__(self):
-        return f"{self.name} ({self.get_notification_type_display()})"
-
-    def render(self, context):
-        """Render template with provided context."""
-        title = self.title_template
-        message = self.message_template
-
-        for key, value in context.items():
-            placeholder = f"{{{key}}}"
-            title = title.replace(placeholder, str(value))
-            message = message.replace(placeholder, str(value))
-
-        return title, message
-
-
 class NotificationPreference(TimeStampedModel):
     """User preferences for notifications"""
 
