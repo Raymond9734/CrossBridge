@@ -55,47 +55,77 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
     };
     
     const handleSubmit = async () => {
-        if (!selectedDoctor || !selectedDate || !selectedTime || !appointmentType) {
-            showToast('Please fill in all required fields', 'error');
-            return;
-        }
-        
-        setIsLoading(true);
-        
-        try {
-            // Use Inertia.js to post to Django backend
-            router.post('/book-appointment/', {
-                doctor: selectedDoctor,
-                date: selectedDate,
-                time: selectedTime,
-                type: appointmentType,
-                notes
-            }, {
-                onSuccess: () => {
-                    showToast('Appointment booked successfully!', 'success');
-                    onClose();
-                    // Reset form
-                    setSelectedDoctor('');
-                    setSelectedDate('');
-                    setSelectedTime('');
-                    setAppointmentType('');
-                    setNotes('');
-                    // Refresh the page to show updated data
-                    window.location.reload();
-                },
-                onError: (errors) => {
-                    console.error('Booking errors:', errors);
-                    showToast(errors.general || 'Failed to book appointment', 'error');
-                },
-                onFinish: () => {
-                    setIsLoading(false);
-                }
-            });
-        } catch (error) {
-            setIsLoading(false);
-            showToast('Failed to book appointment', 'error');
-        }
-    };
+      if (!selectedDoctor || !selectedDate || !selectedTime || !appointmentType) {
+          showToast('Please fill in all required fields', 'error');
+          return;
+      }
+      
+      setIsLoading(true);
+      
+      try {
+          // Get CSRF token
+          const getCSRFToken = () => {
+              const metaTag = document.querySelector('meta[name=csrf-token]');
+              const tokenFromMeta = metaTag?.getAttribute('content') || metaTag?.textContent || '';
+              
+              const getCookie = (name) => {
+                  let cookieValue = null;
+                  if (document.cookie && document.cookie !== '') {
+                      const cookies = document.cookie.split(';');
+                      for (let i = 0; i < cookies.length; i++) {
+                          const cookie = cookies[i].trim();
+                          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                              break;
+                          }
+                      }
+                  }
+                  return cookieValue;
+              };
+              
+              return tokenFromMeta || getCookie('csrftoken') || '';
+          };
+  
+          // Use fetch instead of router.post for API endpoint
+          const response = await fetch('/api/book-appointment/', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': getCSRFToken(),
+                  'X-CSRF-Token': getCSRFToken(),
+              },
+              body: JSON.stringify({
+                  doctor: selectedDoctor,
+                  date: selectedDate,
+                  time: selectedTime,
+                  type: appointmentType,
+                  notes: notes
+              })
+          });
+  
+          const data = await response.json();
+  
+          if (response.ok && data.success) {
+              showToast('Appointment booked successfully!', 'success');
+              onClose();
+              // Reset form
+              setSelectedDoctor('');
+              setSelectedDate('');
+              setSelectedTime('');
+              setAppointmentType('');
+              setNotes('');
+              // Refresh the page to show updated data
+              window.location.reload();
+          } else {
+              showToast(data.error || 'Failed to book appointment', 'error');
+          }
+      } catch (error) {
+          console.error('Booking error:', error);
+          showToast('Failed to book appointment', 'error');
+      } finally {
+          setIsLoading(false);
+      }
+  };
     
     if (!isOpen) return null;
     
