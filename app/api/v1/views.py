@@ -1670,13 +1670,16 @@ class NotificationPreferenceViewSet(viewsets.ModelViewSet):
             )
 
 
+# Update the PatientManagementViewSet in api/v1/views.py
+
+
 class PatientManagementViewSet(viewsets.ViewSet):
     """ViewSet for doctor patient management."""
 
     permission_classes = [IsDoctor]
 
     @action(detail=False, methods=["get"])
-    def patients(self, request):  # Changed from 'list' to 'patients'
+    def patients(self, request):
         """Get patients for current doctor."""
         try:
             # Get patients who have appointments with this doctor
@@ -1746,7 +1749,9 @@ class PatientManagementViewSet(viewsets.ViewSet):
             )
 
     @action(detail=True, methods=["get"])
-    def detail(self, request, pk=None):
+    def patient_detail(
+        self, request, pk=None
+    ):  # Changed from 'detail' to 'patient_detail'
         """Get detailed patient information."""
         try:
             patient = User.objects.get(id=pk)
@@ -1818,6 +1823,12 @@ class PatientManagementViewSet(viewsets.ViewSet):
                 "insurance_info": patient_profile.insurance_info,
                 "recent_appointments": appointments_data,
                 "medical_records": records_data,
+                "total_appointments": len(appointments_data),
+                "last_visit": (
+                    recent_appointments[0].appointment_date.strftime("%Y-%m-%d")
+                    if recent_appointments
+                    else None
+                ),
                 "created_at": patient_profile.created_at.isoformat(),
             }
 
