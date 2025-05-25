@@ -47,8 +47,7 @@ COPY --from=frontend-build /app/app/static/dist ./app/static/dist
 # Create necessary directories (no chown)
 RUN mkdir -p /app/staticfiles /app/media
 
-# Run collectstatic as root
-RUN python manage.py collectstatic --noinput
+
 
 # Copy and make startup script executable (no chown)
 COPY start.sh .

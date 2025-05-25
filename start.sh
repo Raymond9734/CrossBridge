@@ -34,8 +34,8 @@ fi
 echo "Running database migrations..."
 python manage.py migrate --noinput
 
-# Skip static files collection in production (serve directly from volume)
-echo "Skipping static files collection..."
+echo "Collecting static files..."
+python manage.py collectstatic --noinput --clear
 
 # Start Gunicorn
 if command -v gunicorn &> /dev/null; then
