@@ -15,7 +15,7 @@ const MedicalRecords = ({ showToast }) => {
     let filtered = medical_records.filter(record => {
       const matchesSearch = searchTerm === '' || 
         record.diagnosis.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        record.doctor_name.toLowerCase().includes(searchTerm.toLowerCase());
+        (record.doctor_name || record.doctor || '').toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesFilter = filterType === 'all' || 
         record.appointment_type === filterType;
