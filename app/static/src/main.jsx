@@ -4,25 +4,12 @@ import { createInertiaApp, router } from "@inertiajs/react";
 import { InertiaProgress } from '@inertiajs/progress';
 import axios from 'axios';
 import React from 'react';
+import getCookie from "./utils/cookieUtils";
 
 // Import TailwindCSS styles
 import './styles/main.css';
 
-// Function to get CSRF token from cookie
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
+
 
 document.addEventListener('DOMContentLoaded', () => {
     // Get CSRF token from meta tag first, then fallback to cookie
