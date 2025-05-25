@@ -29,7 +29,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
 
     const fetchDoctors = async () => {
         try {
-            const response = await fetch('/api/v1/available-doctors/');
+            const response = await fetch('/api/v1/appointment-booking/available_doctors/');
             const data = await response.json();
             setDoctors(data.doctors || []);
         } catch (error) {
@@ -43,7 +43,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
             const doctor = doctors.find(d => d.name === selectedDoctor);
             if (!doctor) return;
 
-            const response = await fetch(`/api/v1/available-slots/?doctor_id=${doctor.id}&date=${selectedDate}`);
+            const response = await fetch(`/api/v1/appointment-booking/available_slots/?doctor_id=${doctor.id}&date=${selectedDate}`);
             const data = await response.json();
             setTimeSlots(data.slots || []);
             setSelectedTime(''); // Reset selected time when slots change
