@@ -1,9 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.utils import timezone
-from datetime import datetime, timedelta
+from datetime import timedelta
 from .models import Appointment, DoctorAvailability
-from app.account.serializers import UserSerializer, DoctorProfileSerializer
 
 
 class DoctorAvailabilitySerializer(serializers.ModelSerializer):
