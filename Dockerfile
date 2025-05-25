@@ -1,28 +1,39 @@
-# Use Python 3.11 slim image
+# Frontend build stage
+FROM node:18-alpine AS frontend-build
+WORKDIR /app
+
+# Copy package.json and install node dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy frontend source code
+COPY app/static/src ./app/static/src
+COPY vite.config.js ./
+COPY tailwind.config.js ./
+COPY postcss.config.js ./
+
+# Build frontend assets
+RUN npm run build
+
+# Python production stage
 FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV NODE_MAJOR=18
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
-    curl \
-    ca-certificates \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js
-RUN mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && apt-get install nodejs -y
+ENV DJANGO_SETTINGS_MODULE=CareBridge.settings
 
 # Set work directory
 WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    build-essential \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -31,18 +42,29 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . .
 
-# Install Node dependencies and build frontend
-RUN cd static && npm install && npm run build
+# Copy built frontend assets
+COPY --from=frontend-build /app/app/static/dist ./app/static/dist
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
+# Create non-root user for security
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser
 
-# Create non-root user
-RUN adduser --disabled-password --gecos '' appuser && chown -R appuser:appuser /app
+# Create necessary directories and set ownership
+RUN mkdir -p /app/staticfiles /app/media \
+    && chown -R appuser:appuser /app
+
+# Copy and make startup script executable
+COPY start.sh .
+RUN chmod +x start.sh \
+    && chown appuser:appuser start.sh
+
 USER appuser
 
 # Expose port
 EXPOSE 8000
 
-# Start command
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "CareBridge.wsgi:application"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/system/health_check/ || exit 1
+
+# Use startup script
+CMD ["./start.sh"]
