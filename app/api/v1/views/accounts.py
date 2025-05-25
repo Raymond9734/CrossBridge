@@ -110,48 +110,6 @@ class UserProfileViewSet(BaseModelViewSet):
         except Exception as e:
             return self.handle_exception(e, "Failed to update profile")
 
-    @action(detail=False, methods=["post"])
-    def upload_avatar(self, request):
-        """Upload user avatar."""
-        try:
-            profile = self.get_user_profile()
-            if not profile:
-                return self.error_response(
-                    "Profile not found", status_code=status.HTTP_404_NOT_FOUND
-                )
-
-            if "avatar" not in request.FILES:
-                return self.error_response(
-                    "No avatar file provided", status_code=status.HTTP_400_BAD_REQUEST
-                )
-
-            avatar_file = request.FILES["avatar"]
-
-            # Validate file size (max 5MB)
-            if avatar_file.size > 5 * 1024 * 1024:
-                return self.error_response(
-                    "File size must be less than 5MB",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-
-            # Validate file type
-            if not avatar_file.content_type.startswith("image/"):
-                return self.error_response(
-                    "File must be an image", status_code=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Save avatar
-            profile.avatar = avatar_file
-            profile.save()
-
-            return self.success_response(
-                data={"avatar_url": profile.avatar.url if profile.avatar else None},
-                message="Avatar uploaded successfully",
-            )
-
-        except Exception as e:
-            return self.handle_exception(e, "Failed to upload avatar")
-
 
 class DoctorProfileViewSet(BaseModelViewSet):
     """ViewSet for doctor profiles."""
