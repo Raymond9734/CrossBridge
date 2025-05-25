@@ -7,13 +7,80 @@ const ScheduleManagement = ({ showToast }) => {
   const [editingSlot, setEditingSlot] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   
   // Get current availability from backend
   const { doctor_availability = [] } = usePage().props;
-  
+
+  // CSRF Token helper function - MOVED UP
+  const getCSRFToken = () => {
+    // Try to get from meta tag first
+    const metaTag = document.querySelector('meta[name=csrf-token]');
+    const tokenFromMeta = metaTag?.getAttribute('content') || metaTag?.textContent || '';
+    
+    // Fallback to cookie
+    const getCookie = (name) => {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    };
+    
+    return tokenFromMeta || getCookie('csrftoken') || '';
+  };
+
+  // NOW we can define fetchAvailability after getCSRFToken
+  const fetchAvailability = async () => {
+    setIsFetching(true);
+    try {
+      const csrfToken = getCSRFToken();
+      
+      const response = await fetch('/api/doctor-availability/', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+          'X-CSRF-Token': csrfToken,
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        setAvailability(data.availability || []);
+      } else {
+        console.error('Failed to fetch availability:', data.error);
+        // Fallback to props data if API fails
+        setAvailability(doctor_availability);
+        showToast('Failed to load latest availability data', 'warning');
+      }
+    } catch (error) {
+      console.error('Error fetching availability:', error);
+      // Fallback to props data if API fails
+      setAvailability(doctor_availability);
+      showToast('Failed to load availability data', 'error');
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // useEffect
   useEffect(() => {
-    setAvailability(doctor_availability);
-  }, [doctor_availability]);
+    // Try to fetch fresh data, fallback to props
+    if (doctor_availability.length > 0) {
+      setAvailability(doctor_availability);
+      setIsFetching(false);
+    }
+    fetchAvailability();
+  }, []);
 
   const daysOfWeek = [
     { id: 0, name: 'Monday', short: 'Mon' },
@@ -61,18 +128,21 @@ const ScheduleManagement = ({ showToast }) => {
       setSubmitting(true);
       
       try {
+        const csrfToken = getCSRFToken();
+        
         const response = await fetch('/api/doctor-availability/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': document.querySelector('[name=csrf-token]')?.content || '',
+            'X-CSRFToken': csrfToken,
+            'X-CSRF-Token': csrfToken,
           },
           body: JSON.stringify(formData)
         });
         
         const data = await response.json();
         
-        if (data.success) {
+        if (response.ok && data.success) {
           showToast('Availability added successfully!', 'success');
           // Add the new availability to the state
           setAvailability(prev => [...prev, data.availability]);
@@ -196,18 +266,21 @@ const ScheduleManagement = ({ showToast }) => {
     setIsLoading(true);
     
     try {
+      const csrfToken = getCSRFToken();
+      
       const response = await fetch('/api/doctor-availability/', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRFToken': document.querySelector('[name=csrf-token]')?.content || '',
+          'X-CSRFToken': csrfToken,
+          'X-CSRF-Token': csrfToken,
         },
         body: JSON.stringify({ id: slotId })
       });
       
       const data = await response.json();
       
-      if (data.success) {
+      if (response.ok && data.success) {
         showToast('Availability deleted successfully!', 'success');
         // Remove from state
         setAvailability(prev => prev.filter(slot => slot.id !== slotId));
@@ -226,18 +299,21 @@ const ScheduleManagement = ({ showToast }) => {
     setIsLoading(true);
     
     try {
+      const csrfToken = getCSRFToken();
+      
       const response = await fetch('/api/toggle-availability/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRFToken': document.querySelector('[name=csrf-token]')?.content || '',
+          'X-CSRFToken': csrfToken,
+          'X-CSRF-Token': csrfToken,
         },
         body: JSON.stringify({ id: slotId })
       });
       
       const data = await response.json();
       
-      if (data.success) {
+      if (response.ok && data.success) {
         showToast(data.message, 'success');
         // Update state
         setAvailability(prev => prev.map(slot => 
@@ -273,80 +349,104 @@ const ScheduleManagement = ({ showToast }) => {
           <div className="flex items-center gap-3">
             <Calendar className="w-6 h-6 text-teal-600" />
             <h2 className="text-xl font-semibold text-gray-900">Schedule Management</h2>
+            {isFetching && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-teal-600"></div>
+            )}
           </div>
           
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="bg-teal-500 text-white px-4 py-2 rounded-lg hover:bg-teal-600 flex items-center gap-2"
-            disabled={isLoading}
-          >
-            <Plus className="w-4 h-4" />
-            Add Availability
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fetchAvailability()}
+              className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              disabled={isFetching}
+            >
+              Refresh
+            </button>
+            
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="bg-teal-500 text-white px-4 py-2 rounded-lg hover:bg-teal-600 flex items-center gap-2"
+              disabled={isLoading || isFetching}
+            >
+              <Plus className="w-4 h-4" />
+              Add Availability
+            </button>
+          </div>
         </div>
       </div>
       
-      <div className="p-6">
-        <div className="space-y-6">
-          {daysOfWeek.map(day => (
-            <div key={day.id} className="border border-gray-200 rounded-lg p-4">
-              <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-gray-500" />
-                {day.name}
-              </h3>
-              
-              {groupedAvailability[day.id]?.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {groupedAvailability[day.id].map(slot => (
-                    <div key={slot.id} className={`p-3 rounded-lg border ${
-                      slot.is_available ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
-                    }`}>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-900">
-                          {slot.start_time} - {slot.end_time}
-                        </span>
-                        
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleToggleAvailability(slot.id, slot.is_available)}
-                            className={`px-2 py-1 text-xs rounded ${
-                              slot.is_available 
-                                ? 'bg-green-100 text-green-800 hover:bg-green-200' 
-                                : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                            }`}
-                            disabled={isLoading}
-                          >
-                            {slot.is_available ? 'Available' : 'Disabled'}
-                          </button>
+      {/* Loading state for initial fetch */}
+      {isFetching && availability.length === 0 ? (
+        <div className="p-6">
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+            <span className="ml-3 text-gray-600">Loading availability...</span>
+          </div>
+        </div>
+      ) : (
+        <div className="p-6">
+          <div className="space-y-6">
+            {daysOfWeek.map(day => (
+              <div key={day.id} className="border border-gray-200 rounded-lg p-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-gray-500" />
+                  {day.name}
+                </h3>
+                
+                {groupedAvailability[day.id]?.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {groupedAvailability[day.id].map(slot => (
+                      <div key={slot.id} className={`p-3 rounded-lg border ${
+                        slot.is_available ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                      }`}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-900">
+                            {slot.start_time} - {slot.end_time}
+                          </span>
                           
-                          <button
-                            onClick={() => handleDeleteAvailability(slot.id)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded"
-                            disabled={isLoading}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleToggleAvailability(slot.id, slot.is_available)}
+                              className={`px-2 py-1 text-xs rounded ${
+                                slot.is_available 
+                                  ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                              }`}
+                              disabled={isLoading || isFetching}
+                            >
+                              {slot.is_available ? 'Available' : 'Disabled'}
+                            </button>
+                            
+                            <button
+                              onClick={() => handleDeleteAvailability(slot.id)}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded"
+                              disabled={isLoading || isFetching}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                  <p>No availability set for {day.name}</p>
-                  <button
-                    onClick={() => setShowAddForm(true)}
-                    className="mt-2 text-teal-600 hover:text-teal-700 text-sm font-medium"
-                  >
-                    Add availability
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    <p>No availability set for {day.name}</p>
+                    <button
+                      onClick={() => setShowAddForm(true)}
+                      className="mt-2 text-teal-600 hover:text-teal-700 text-sm font-medium"
+                      disabled={isFetching}
+                    >
+                      Add availability
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
       
       {showAddForm && (
         <AddAvailabilityForm
