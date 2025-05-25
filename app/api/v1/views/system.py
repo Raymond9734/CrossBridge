@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth.models import User
-from django.db.models import Q, Count, Avg
+from django.db.models import Q, Count
 from django.http import HttpResponse
 from django.utils import timezone
 from datetime import timedelta
@@ -17,7 +17,7 @@ from io import StringIO
 from .base import BaseAPIViewSet
 from app.account.models import UserProfile, DoctorProfile
 from app.appointment.models import Appointment
-from app.medical_record.models import MedicalRecord, Prescription, Review
+from app.medical_record.models import MedicalRecord
 
 import logging
 
@@ -289,17 +289,11 @@ class ReportsViewSet(BaseAPIViewSet):
             doctor=doctor, appointment_date__gte=this_month
         ).count()
 
-        avg_rating = (
-            Review.objects.filter(doctor=doctor).aggregate(avg=Avg("rating"))["avg"]
-            or 0
-        )
-
         return {
             "role": "doctor",
             "total_appointments": total_appointments,
             "total_patients": total_patients,
             "appointments_this_month": appointments_this_month,
-            "average_rating": round(avg_rating, 1),
             "generated_at": timezone.now().isoformat(),
         }
 
@@ -377,12 +371,6 @@ class StatisticsViewSet(BaseAPIViewSet):
                 "completed_today": Appointment.objects.filter(
                     doctor=user, appointment_date=today, status="completed"
                 ).count(),
-                # Review stats
-                "average_rating": Review.objects.filter(doctor=user).aggregate(
-                    avg=Avg("rating")
-                )["avg"]
-                or 0,
-                "total_reviews": Review.objects.filter(doctor=user).count(),
                 # Medical records
                 "medical_records_created": MedicalRecord.objects.filter(
                     appointment__doctor=user
@@ -443,12 +431,6 @@ class StatisticsViewSet(BaseAPIViewSet):
                 # Medical records
                 "medical_records": MedicalRecord.objects.filter(
                     appointment__patient=user
-                ).count(),
-                "prescriptions": Prescription.objects.filter(
-                    medical_record__appointment__patient=user
-                ).count(),
-                "active_prescriptions": Prescription.objects.filter(
-                    medical_record__appointment__patient=user, is_active=True
                 ).count(),
                 # Health metrics (latest)
                 "latest_vitals": self._get_latest_vitals(user),
