@@ -1,5 +1,4 @@
 # frontend/views.py - Minimal page views for SPA
-from django.http import JsonResponse
 from django.shortcuts import redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -97,6 +96,7 @@ def register_view(request):
             confirm_password = data.get("confirmPassword")
             role = data.get("role", "")
             terms = data.get("terms", False)
+            specialty = data.get("specialty", "").strip()
 
             # Server-side validation
             errors = {}
@@ -122,6 +122,9 @@ def register_view(request):
             if role not in ["patient", "doctor"]:
                 errors["role"] = "Invalid role selection"
 
+            if role == "doctor" and not specialty:
+                errors["specialty"] = "Medical specialty is required for doctors"
+
             if errors:
                 return inertia_render(
                     request, "Register", props={"errors": errors, "old": data}
@@ -141,12 +144,9 @@ def register_view(request):
 
             if role == "doctor":
                 doctor_data = {
-                    "specialty": "General Medicine",  # Default
+                    "specialty": specialty,  # USE THE ACTUAL SPECIALTY
                     "license_number": f"LIC-{timezone.now().strftime('%Y%m%d%H%M%S')}",
                 }
-                profile = user_service.create_doctor_profile(
-                    user_data, profile_data, doctor_data
-                )
             else:
                 profile = user_service.create_patient_profile(user_data, profile_data)
 
