@@ -92,14 +92,55 @@ class UserProfileViewSet(BaseModelViewSet):
                 "address": request.data.get("address", ""),
                 "emergency_contact": request.data.get("emergencyContact", ""),
                 "emergency_phone": request.data.get("emergencyPhone", ""),
+                "gender": request.data.get("gender", ""),
+                "insurance_info": request.data.get("insuranceInfo", ""),
             }
 
+            # Handle date of birth separately due to date parsing
+            date_of_birth = request.data.get("dateOfBirth")
+            if date_of_birth:
+                try:
+                    from datetime import datetime
+
+                    # Parse date string (expecting YYYY-MM-DD format)
+                    if isinstance(date_of_birth, str):
+                        parsed_date = datetime.strptime(
+                            date_of_birth, "%Y-%m-%d"
+                        ).date()
+                        profile_data["date_of_birth"] = parsed_date
+                    else:
+                        profile_data["date_of_birth"] = date_of_birth
+                except ValueError:
+                    return self.error_response(
+                        "Invalid date format. Please use YYYY-MM-DD format.",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+            elif date_of_birth == "":  # Handle empty string to clear the field
+                profile_data["date_of_birth"] = None
+
+            # Add medical history for patients
             if profile.role == "patient":
                 profile_data["medical_history"] = request.data.get("medicalHistory", "")
 
+            # Update profile fields
             for key, value in profile_data.items():
                 if hasattr(profile, key):
-                    setattr(profile, key, value)
+                    # Handle empty strings for optional fields
+                    if key in [
+                        "gender",
+                        "insurance_info",
+                        "phone",
+                        "address",
+                        "emergency_contact",
+                        "emergency_phone",
+                        "medical_history",
+                    ]:
+                        setattr(profile, key, value if value else "")
+                    elif key == "date_of_birth":
+                        setattr(profile, key, value)  # Can be None or date object
+                    else:
+                        setattr(profile, key, value)
+
             profile.save()
 
             return self.success_response(
