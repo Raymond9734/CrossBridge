@@ -16,19 +16,19 @@ echo "Setting up directories..."
 mkdir -p /app/staticfiles /app/media
 
 # # Handle Vite manifest - create a minimal one if missing
-# if [ ! -f "/app/staticfiles/manifest.json" ]; then
-#     echo "Creating minimal Vite manifest..."
-#     mkdir -p /app/staticfiles
-#     cat > /app/staticfiles/manifest.json << 'EOF'
-# {
-#   "main.js": {
-#     "file": "main.js",
-#     "src": "main.js",
-#     "isEntry": true
-#   }
-# }
-# EOF
-# fi
+if [ ! -f "/app/staticfiles/manifest.json" ]; then
+    echo "Creating minimal Vite manifest..."
+    mkdir -p /app/staticfiles
+    cat > /app/staticfiles/manifest.json << 'EOF'
+{
+  "main.js": {
+    "file": "main.js",
+    "src": "main.js",
+    "isEntry": true
+  }
+}
+EOF
+fi
 
 # Run migrations
 echo "Running database migrations..."

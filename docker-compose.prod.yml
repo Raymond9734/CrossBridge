@@ -44,10 +44,10 @@ services:
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:8000}
       - USE_POSTGRESS_DATABASE=True
-      - DB_NAME=${DB_NAME:-carebridge}
-      - DB_USER=${DB_USER:-postgres}
+      - DB_NAME=${DB_NAME:-CareBridgeDB}
+      - DB_USER=${DB_USER:-CareBridgeDB_owner}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=db
+      - DB_HOST=ep-soft-cell-a2mq2vmi-pooler.eu-central-1.aws.neon.tech
       - DB_PORT=5432
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
