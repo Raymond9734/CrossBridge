@@ -1,3 +1,4 @@
+// static/src/pages/Register.jsx - Updated with specialty selection for doctors
 import React, { useState } from 'react';
 import { Link, router } from '@inertiajs/react';
 import { Eye, EyeOff, Mail, Lock, User, Phone, Heart, AlertCircle, CheckCircle } from 'lucide-react';
@@ -10,13 +11,30 @@ export default function Register() {
         phone: '',
         password: '',
         confirmPassword: '',
-        role: 'patient', // Default to patient
+        role: 'patient',
+        specialty: '', // Add specialty field
         terms: false
     });
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [errors, setErrors] = useState({});
     const [isLoading, setIsLoading] = useState(false);
+
+    // Specialty options for doctors
+    const specialties = [
+        'General Medicine',
+        'Cardiology',
+        'Dermatology', 
+        'Pediatrics',
+        'Orthopedics',
+        'Gynecology',
+        'Internal Medicine',
+        'Surgery',
+        'Psychiatry',
+        'Radiology',
+        'Anesthesiology',
+        'Emergency Medicine'
+    ];
 
     const handleInputChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -57,14 +75,17 @@ export default function Register() {
             newErrors.password = 'Password is required';
         } else if (formData.password.length < 8) {
             newErrors.password = 'Password must be at least 8 characters';
-        } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
-            newErrors.password = 'Password must contain uppercase, lowercase, and number';
         }
         
         if (!formData.confirmPassword) {
             newErrors.confirmPassword = 'Please confirm your password';
         } else if (formData.password !== formData.confirmPassword) {
             newErrors.confirmPassword = 'Passwords do not match';
+        }
+
+        // Validate specialty for doctors
+        if (formData.role === 'doctor' && !formData.specialty) {
+            newErrors.specialty = 'Please select a medical specialty';
         }
         
         if (!formData.terms) {
@@ -99,16 +120,6 @@ export default function Register() {
             setErrors({ general: 'An error occurred. Please try again.' });
         }
     };
-
-    const getPasswordStrength = (password) => {
-        if (password.length === 0) return { strength: 0, text: '', color: '' };
-        if (password.length < 6) return { strength: 25, text: 'Weak', color: 'bg-red-500' };
-        if (password.length < 8) return { strength: 50, text: 'Fair', color: 'bg-yellow-500' };
-        if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) return { strength: 75, text: 'Good', color: 'bg-blue-500' };
-        return { strength: 100, text: 'Strong', color: 'bg-green-500' };
-    };
-
-    const passwordStrength = getPasswordStrength(formData.password);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-teal-50 via-blue-50 to-cyan-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -194,11 +205,41 @@ export default function Register() {
                             </div>
                         </div>
 
+                        {/* Specialty Selection for Doctors */}
+                        {formData.role === 'doctor' && (
+                            <div>
+                                <label htmlFor="specialty" className="block text-sm font-medium text-gray-700 mb-2">
+                                    Medical Specialty *
+                                </label>
+                                <select
+                                    id="specialty"
+                                    name="specialty"
+                                    value={formData.specialty}
+                                    onChange={handleInputChange}
+                                    className={`block w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none transition-colors ${
+                                        errors.specialty 
+                                            ? 'border-red-300 focus:border-red-500' 
+                                            : 'border-gray-300 focus:border-teal-500'
+                                    }`}
+                                >
+                                    <option value="">Select your medical specialty</option>
+                                    {specialties.map(specialty => (
+                                        <option key={specialty} value={specialty}>
+                                            {specialty}
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.specialty && (
+                                    <p className="mt-1 text-sm text-red-600">{errors.specialty}</p>
+                                )}
+                            </div>
+                        )}
+
                         {/* Name Fields */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-2">
-                                    First Name
+                                    First Name *
                                 </label>
                                 <input
                                     id="firstName"
@@ -220,7 +261,7 @@ export default function Register() {
 
                             <div>
                                 <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-2">
-                                    Last Name
+                                    Last Name *
                                 </label>
                                 <input
                                     id="lastName"
@@ -244,7 +285,7 @@ export default function Register() {
                         {/* Email Field */}
                         <div>
                             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                                Email Address
+                                Email Address *
                             </label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -272,7 +313,7 @@ export default function Register() {
                         {/* Phone Field */}
                         <div>
                             <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                                Phone Number
+                                Phone Number *
                             </label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -301,7 +342,7 @@ export default function Register() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                                    Password
+                                    Password *
                                 </label>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -332,25 +373,6 @@ export default function Register() {
                                         )}
                                     </button>
                                 </div>
-                                {formData.password && (
-                                    <div className="mt-2">
-                                        <div className="flex items-center justify-between text-xs">
-                                            <span className="text-gray-600">Password strength:</span>
-                                            <span className={`font-medium ${
-                                                passwordStrength.strength >= 75 ? 'text-green-600' : 
-                                                passwordStrength.strength >= 50 ? 'text-yellow-600' : 'text-red-600'
-                                            }`}>
-                                                {passwordStrength.text}
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
-                                            <div 
-                                                className={`h-1.5 rounded-full transition-all ${passwordStrength.color}`}
-                                                style={{ width: `${passwordStrength.strength}%` }}
-                                            ></div>
-                                        </div>
-                                    </div>
-                                )}
                                 {errors.password && (
                                     <p className="mt-1 text-sm text-red-600">{errors.password}</p>
                                 )}
@@ -358,7 +380,7 @@ export default function Register() {
 
                             <div>
                                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
-                                    Confirm Password
+                                    Confirm Password *
                                 </label>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
