@@ -46,14 +46,23 @@ class UserProfileService(BaseService):
                 password=user_data["password"],
             )
 
-            self.logger.info(f"Creating Dr profile for user {user.email}")
-
-            # Get the profile created by the signal and update it
+            # Update UserProfile
             profile = user.userprofile
             profile.role = "doctor"
             for key, value in profile_data.items():
                 setattr(profile, key, value)
             profile.save()
+
+            DoctorProfile.objects.create(
+                user_profile=profile,
+                license_number=doctor_data.get("license_number", f"LIC-{user.id:06d}"),
+                specialty=doctor_data.get("specialty", "General Medicine"),
+                years_experience=doctor_data.get("years_experience", 0),
+                bio=doctor_data.get("bio", ""),
+                is_available=True,
+                accepts_new_patients=True,
+                consultation_fee=doctor_data.get("consultation_fee", 150.00),
+            )
 
             self.logger.info(f"Created doctor profile for user {user.email}")
             return profile
