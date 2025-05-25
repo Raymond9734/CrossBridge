@@ -33,9 +33,6 @@ def cleanup_expired_appointments():
         status__in=["completed", "cancelled", "no_show"],
     ).count()
 
-    # In a real system, you might archive these instead of deleting
-    # For now, we'll just count them
-
     return f"Found {expired_count} expired appointments"
 
 
