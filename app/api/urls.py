@@ -29,9 +29,6 @@ from .v1.views import (
     StatisticsViewSet,
     SystemViewSet,
     PatientManagementViewSet,
-    # AJAX utility functions
-    get_available_slots_ajax,
-    get_available_doctors_ajax,
 )
 
 # Create router and register viewsets
