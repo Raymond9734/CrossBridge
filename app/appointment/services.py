@@ -131,7 +131,6 @@ class AppointmentService(BaseService):
                 # Clear cache
                 self._clear_appointment_cache(patient.id, doctor.id)
 
-                # Send notification
                 try:
                     from app.notification.services import NotificationService
 
@@ -139,15 +138,19 @@ class AppointmentService(BaseService):
                     notification_service.send_appointment_request_notification(
                         appointment
                     )
-                except Exception:
-                    raise Exception
+                except Exception as e:
+                    self.logger.warning(f"Failed to send appointment notification: {e}")
 
                 return appointment
 
-            except Exception:
+            except Exception as e:
+                # Don't mask the real error with a misleading message
+                if isinstance(e, (ValidationError, ConflictError, NotFoundError)):
+                    raise  # Re-raise our custom exceptions as-is
+
+                self.logger.error(f"Unexpected error during appointment booking: {e}")
                 raise ConflictError(
-                    "Unable to complete the booking due to a system error. "
-                    "The time slot may have been taken by another patient. Please try again."
+                    "Unable to complete the booking due to a system error. Please try again."
                 )
 
     def get_available_slots(self, doctor, date):
