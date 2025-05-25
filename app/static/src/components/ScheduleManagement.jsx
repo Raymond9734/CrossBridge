@@ -268,14 +268,14 @@ const ScheduleManagement = ({ showToast }) => {
     try {
       const csrfToken = getCSRFToken();
       
-      const response = await fetch('/api/v1/doctor-availability/', {
+      const response = await fetch(`/api/v1/doctor-availability/${slotId}/`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken,
           'X-CSRF-Token': csrfToken,
         },
-        body: JSON.stringify({ id: slotId })
+        // REMOVED: Don't send ID in body for DELETE requests
       });
       
       const data = await response.json();
