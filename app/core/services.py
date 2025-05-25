@@ -68,10 +68,11 @@ class BaseService(ABC):
             self.logger.info(f"Hard deleted {self.get_model().__name__}")
 
     def get_cached(self, cache_key, queryset_func, timeout=300):
-        """Get cached queryset or fetch from database."""
+        """Get cached data from cache or execute function."""
         result = cache.get(cache_key)
         if result is None:
-            result = list(queryset_func())
+            result = queryset_func()
+            # Don't convert to list automatically - let the caller decide
             cache.set(cache_key, result, timeout)
         return result
 
