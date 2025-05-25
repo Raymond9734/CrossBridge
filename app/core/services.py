@@ -1,3 +1,5 @@
+# core/services.py - Updated CacheService with fallback handling
+
 """
 Base service classes for business logic.
 """
@@ -13,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseService(ABC):
-    """
-    Base service class that provides common functionality.
-    """
+    """Base service class that provides common functionality."""
 
     def __init__(self):
         self.logger = logger
@@ -69,24 +69,38 @@ class BaseService(ABC):
 
     def get_cached(self, cache_key, queryset_func, timeout=300):
         """Get cached data from cache or execute function."""
-        result = cache.get(cache_key)
-        if result is None:
-            result = queryset_func()
-            # Don't convert to list automatically - let the caller decide
-            cache.set(cache_key, result, timeout)
-        return result
+        try:
+            result = cache.get(cache_key)
+            if result is None:
+                result = queryset_func()
+                cache.set(cache_key, result, timeout)
+            return result
+        except Exception as e:
+            # Cache failed, execute function directly
+            logger.warning(f"Cache operation failed: {e}")
+            return queryset_func()
 
 
 class CacheService:
-    """
-    Service for managing cache operations with backend compatibility.
-    """
+    """Service for managing cache operations with backend compatibility."""
 
     @staticmethod
     def _is_redis_backend():
         """Check if Redis is being used as cache backend."""
-        backend = settings.CACHES["default"]["BACKEND"]
-        return "redis" in backend.lower() or "RedisCache" in backend
+        try:
+            backend = settings.CACHES["default"]["BACKEND"]
+            return "redis" in backend.lower()
+        except (KeyError, AttributeError):
+            return False
+
+    @staticmethod
+    def _safe_cache_operation(operation, *args, **kwargs):
+        """Safely execute cache operations with error handling."""
+        try:
+            return operation(*args, **kwargs)
+        except Exception as e:
+            logger.warning(f"Cache operation failed: {e}")
+            return None
 
     @staticmethod
     def _safe_delete_pattern(pattern):
@@ -95,29 +109,43 @@ class CacheService:
             try:
                 # Redis-specific deletion with pattern matching
                 keys = cache.keys(pattern)
-                if keys:
+                if keys:  # Check if keys is not None or empty
                     cache.delete_many(keys)
-            except AttributeError:
-                # Fallback if keys() method doesn't exist
-                pass
-        else:
-            # For non-Redis backends, we can't use patterns
-            # Just delete specific keys we know about
-            pass
+                    return len(keys)
+            except (AttributeError, TypeError, Exception) as e:
+                logger.warning(f"Redis pattern deletion failed: {e}")
+        return 0
 
     @staticmethod
     def _safe_delete_keys(keys):
         """Safely delete specific cache keys."""
+        deleted_count = 0
         for key in keys:
             try:
-                cache.delete(key)
+                if cache.delete(key):
+                    deleted_count += 1
             except Exception as e:
                 logger.warning(f"Failed to delete cache key {key}: {e}")
+        return deleted_count
+
+    @staticmethod
+    def safe_cache_get(key, default=None):
+        """Safely get value from cache."""
+        return CacheService._safe_cache_operation(cache.get, key, default)
+
+    @staticmethod
+    def safe_cache_set(key, value, timeout=300):
+        """Safely set value in cache."""
+        return CacheService._safe_cache_operation(cache.set, key, value, timeout)
+
+    @staticmethod
+    def safe_cache_delete(key):
+        """Safely delete key from cache."""
+        return CacheService._safe_cache_operation(cache.delete, key)
 
     @staticmethod
     def invalidate_user_cache(user_id):
         """Invalidate all cache entries for a user."""
-        # Use specific keys instead of patterns for LocMemCache compatibility
         cache_keys = [
             f"user_data:{user_id}",
             f"user_appointments:{user_id}:all",
@@ -137,7 +165,8 @@ class CacheService:
             f"patient_lab_results:{user_id}:all",
         ]
 
-        CacheService._safe_delete_keys(cache_keys)
+        deleted_count = CacheService._safe_delete_keys(cache_keys)
+        logger.info(f"Invalidated {deleted_count} cache keys for user {user_id}")
 
     @staticmethod
     def invalidate_doctor_cache(doctor_id):
@@ -153,7 +182,7 @@ class CacheService:
             "doctors_by_specialty:all",
         ]
 
-        # Also clear available slots for multiple dates (common patterns)
+        # Also clear available slots for multiple dates
         import datetime
 
         today = datetime.date.today()
@@ -161,12 +190,12 @@ class CacheService:
             date = today + datetime.timedelta(days=i)
             cache_keys.append(f"available_slots:{doctor_id}:{date}")
 
-        CacheService._safe_delete_keys(cache_keys)
+        deleted_count = CacheService._safe_delete_keys(cache_keys)
+        logger.info(f"Invalidated {deleted_count} cache keys for doctor {doctor_id}")
 
     @staticmethod
     def invalidate_appointment_cache(patient_id, doctor_id):
         """Invalidate appointment-related cache."""
-        # Combine both user cache invalidations
         CacheService.invalidate_user_cache(patient_id)
         CacheService.invalidate_doctor_cache(doctor_id)
 
@@ -175,5 +204,34 @@ class CacheService:
         """Clear all cache (use with caution)."""
         try:
             cache.clear()
+            logger.info("Cleared all cache")
         except Exception as e:
             logger.warning(f"Failed to clear all cache: {e}")
+
+    @staticmethod
+    def get_cache_info():
+        """Get information about current cache backend."""
+        try:
+            backend = settings.CACHES["default"]["BACKEND"]
+            is_redis = CacheService._is_redis_backend()
+
+            # Test cache operation
+            test_key = "cache_test"
+            CacheService.safe_cache_set(test_key, "test_value", 10)
+            test_result = CacheService.safe_cache_get(test_key)
+            CacheService.safe_cache_delete(test_key)
+
+            return {
+                "backend": backend,
+                "is_redis": is_redis,
+                "is_working": test_result == "test_value",
+                "status": "healthy" if test_result == "test_value" else "degraded",
+            }
+        except Exception as e:
+            return {
+                "backend": "unknown",
+                "is_redis": False,
+                "is_working": False,
+                "status": "failed",
+                "error": str(e),
+            }

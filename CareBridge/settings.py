@@ -7,6 +7,60 @@ import os
 from decouple import config
 from pathlib import Path
 from datetime import timedelta
+import redis
+
+
+def get_cache_config():
+    """Get cache configuration with Redis fallback."""
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+
+    try:
+        # Test Redis connection
+        r = redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+        r.ping()
+
+        # Redis is available
+        print("✓ Redis connected successfully")
+        return {
+            "default": {
+                "BACKEND": "django_redis.cache.RedisCache",
+                "LOCATION": redis_url,
+                "OPTIONS": {
+                    "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                    "CONNECTION_POOL_KWARGS": {
+                        "max_connections": 50,
+                        "retry_on_timeout": True,
+                        "socket_connect_timeout": 5,
+                        "socket_timeout": 5,
+                    },
+                    "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
+                    "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+                },
+                "KEY_PREFIX": "carebridge",
+                "TIMEOUT": 300,
+            }
+        }
+    except (redis.ConnectionError, redis.TimeoutError, Exception) as e:
+        print(f"⚠ Redis unavailable ({e}), falling back to local memory cache")
+        return {
+            "default": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "LOCATION": "carebridge-locmem",
+                "OPTIONS": {
+                    "MAX_ENTRIES": 10000,
+                    "CULL_FREQUENCY": 4,
+                },
+                "TIMEOUT": 300,
+            }
+        }
+
+
+# Use the dynamic cache configuration
+CACHES = get_cache_config()
+
+# Add cache backend info to context
+CACHE_BACKEND = CACHES["default"]["BACKEND"]
+IS_REDIS_CACHE = "redis" in CACHE_BACKEND.lower()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -26,7 +80,13 @@ ALLOWED_HOSTS = config(
     default="localhost,127.0.0.1",
     cast=lambda v: [s.strip() for s in v.split(",")],
 )
-
+DJANGO_VITE = {
+    "default": {
+        "dev_mode": True,
+        "dev_server_port": 5173,
+        "manifest_path": BASE_DIR / "staticfiles" / "manifest.json",
+    }
+}
 # Application definition
 DJANGO_APPS = [
     "django.contrib.admin",
