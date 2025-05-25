@@ -23,7 +23,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DJANGO_SETTINGS_MODULE=CareBridge.settings
 
-# Set work directory
 WORKDIR /app
 
 # Install system dependencies
@@ -45,32 +44,22 @@ COPY . .
 # Copy built frontend assets
 COPY --from=frontend-build /app/app/static/dist ./app/static/dist
 
-# Create non-root user for security
-RUN adduser --disabled-password --gecos '' --uid 1000 appuser
+# Create necessary directories (no chown)
+RUN mkdir -p /app/staticfiles /app/media
 
-# Create necessary directories and set ownership
-RUN mkdir -p /app/staticfiles /app/media \
-    && chown -R appuser:appuser /app
-
-# Run collectstatic as root (before switching user)
+# Run collectstatic as root
 RUN python manage.py collectstatic --noinput
 
-# Change ownership so appuser can access staticfiles
-RUN chown -R appuser:appuser /app/staticfiles
-
-# Copy and make startup script executable
+# Copy and make startup script executable (no chown)
 COPY start.sh .
-RUN chmod +x start.sh \
-    && chown appuser:appuser start.sh
+RUN chmod +x start.sh
 
-USER appuser
+# No user switch, run as root
+# USER appuser  <-- removed
 
-# Expose port
 EXPOSE 8000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/v1/system/health_check/ || exit 1
 
-# Use startup script
 CMD ["./start.sh"]
