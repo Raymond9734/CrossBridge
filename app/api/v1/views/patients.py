@@ -89,7 +89,7 @@ class PatientManagementViewSet(BaseAPIViewSet):
             return self.handle_exception(e, "Unable to load patients")
 
     @action(detail=True, methods=["get"])
-    def detail(self, request, pk=None):
+    def patient_detail(self, request, pk=None):
         """Get detailed patient information."""
         try:
             patient = User.objects.get(id=pk)
