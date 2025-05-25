@@ -1,8 +1,10 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth.models import User
-from app.core.services import CacheService
 from .models import UserProfile
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @receiver(post_save, sender=User)
@@ -22,9 +24,13 @@ def save_user_profile(sender, instance, **kwargs):
 @receiver(post_save, sender=UserProfile)
 def handle_profile_updates(sender, instance, **kwargs):
     """Handle profile updates."""
-    # Clear user cache
-    CacheService.invalidate_user_cache(instance.user.id)
+    try:
+        from app.core.services import CacheService
 
-    # If doctor, clear doctor-specific cache
-    if instance.role == "doctor":
-        CacheService.invalidate_doctor_cache(instance.user.id)
+        CacheService.invalidate_user_cache(instance.user.id)
+
+        # If doctor, clear doctor-specific cache
+        if instance.role == "doctor":
+            CacheService.invalidate_doctor_cache(instance.user.id)
+    except Exception as e:
+        logger.warning(f"Failed to clear profile cache: {e}")

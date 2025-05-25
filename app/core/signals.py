@@ -9,16 +9,24 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=User)
 def clear_user_cache(sender, instance, **kwargs):
     """Clear user-related cache when user is updated."""
-    from .services import CacheService
+    try:
+        from app.core.services import CacheService
 
-    CacheService.invalidate_user_cache(instance.id)
-    logger.info(f"Cleared cache for user {instance.id}")
+        CacheService.invalidate_user_cache(instance.id)
+        logger.debug(f"Cleared cache for user {instance.id}")
+    except Exception as e:
+        logger.warning(f"Failed to clear user cache: {e}")
 
 
 @receiver(pre_delete, sender=User)
 def cleanup_user_data(sender, instance, **kwargs):
     """Clean up user-related data before deletion."""
-    from .services import CacheService
+    logger.info(f"Cleaning up data for user {instance.id}")
 
-    CacheService.invalidate_user_cache(instance.id)
-    logger.info(f"Cleaned up data for user {instance.id}")
+    # Clear cache
+    try:
+        from app.core.services import CacheService
+
+        CacheService.invalidate_user_cache(instance.id)
+    except Exception as e:
+        logger.warning(f"Failed to clear user cache on deletion: {e}")

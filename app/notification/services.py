@@ -1,9 +1,11 @@
 from django.db import transaction
-from django.core.cache import cache
 from django.utils import timezone
-from app.core.services import BaseService
+from app.core.services import BaseService, CacheService
 from .models import Notification, NotificationPreference
 from datetime import timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class NotificationService(BaseService):
@@ -52,10 +54,55 @@ class NotificationService(BaseService):
             metadata=metadata or {},
         )
 
-        # Clear user's notification cache
-        cache.delete(f"user_notifications:{user.id}")
+        # Clear user's notification cache using CacheService
+        try:
+            CacheService.invalidate_user_cache(user.id)
+        except Exception as e:
+            logger.warning(f"Failed to clear notification cache: {e}")
 
         return notification
+
+    def get_user_notifications(self, user, unread_only=False, limit=None):
+        """Get notifications for a user."""
+        cache_key = f"user_notifications:{user.id}:{'unread' if unread_only else 'all'}:{limit or 'all'}"
+
+        def get_notifications():
+            queryset = Notification.objects.filter(user=user)
+
+            if unread_only:
+                queryset = queryset.filter(is_read=False)
+
+            queryset = queryset.select_related("appointment")
+
+            if limit:
+                queryset = queryset[:limit]
+
+            return list(queryset)
+
+        try:
+            return self.get_cached(cache_key, get_notifications, timeout=300)
+        except Exception as e:
+            logger.warning(f"Cache error in get_user_notifications: {e}")
+            # Return direct query if cache fails
+            return get_notifications()
+
+    def mark_as_read(self, notification_ids, user):
+        """Mark notifications as read."""
+        with transaction.atomic():
+            notifications = Notification.objects.filter(
+                id__in=notification_ids, user=user, is_read=False
+            )
+
+            for notification in notifications:
+                notification.mark_as_read()
+
+            # Clear cache using CacheService
+            try:
+                CacheService.invalidate_user_cache(user.id)
+            except Exception as e:
+                logger.warning(f"Failed to clear notification cache: {e}")
+
+            return notifications.count()
 
     def send_appointment_request_notification(self, appointment):
         """Send notification when appointment is requested."""
@@ -182,40 +229,6 @@ class NotificationService(BaseService):
                     scheduled_for=reminder_time,
                     priority="normal",
                 )
-
-    def get_user_notifications(self, user, unread_only=False, limit=None):
-        """Get notifications for a user."""
-        cache_key = f"user_notifications:{user.id}:{'unread' if unread_only else 'all'}:{limit or 'all'}"
-
-        def get_notifications():
-            queryset = Notification.objects.filter(user=user)
-
-            if unread_only:
-                queryset = queryset.filter(is_read=False)
-
-            queryset = queryset.select_related("appointment")
-
-            if limit:
-                queryset = queryset[:limit]
-
-            return list(queryset)
-
-        return self.get_cached(cache_key, get_notifications, timeout=300)
-
-    def mark_as_read(self, notification_ids, user):
-        """Mark notifications as read."""
-        with transaction.atomic():
-            notifications = Notification.objects.filter(
-                id__in=notification_ids, user=user, is_read=False
-            )
-
-            for notification in notifications:
-                notification.mark_as_read()
-
-            # Clear cache
-            cache.delete(f"user_notifications:{user.id}")
-
-            return notifications.count()
 
     def get_user_preferences(self, user):
         """Get or create user notification preferences."""

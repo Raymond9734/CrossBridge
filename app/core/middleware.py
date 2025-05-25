@@ -75,7 +75,7 @@ class PerformanceMiddleware(MiddlewareMixin):
 
 class RateLimitMiddleware(MiddlewareMixin):
     """
-    Enhanced rate limiting middleware.
+    Enhanced rate limiting middleware - works with any cache backend.
     """
 
     def process_request(self, request):
@@ -93,15 +93,22 @@ class RateLimitMiddleware(MiddlewareMixin):
                 limit, window = 100, 60  # 100 requests per minute
                 cache_key = f"rate_limit:general:{client_ip}"
 
-            current_requests = cache.get(cache_key, 0)
+            try:
+                current_requests = cache.get(cache_key, 0)
 
-            if current_requests >= limit:
-                return JsonResponse(
-                    {"error": "Rate limit exceeded. Please try again later."},
-                    status=429,
-                )
+                if current_requests >= limit:
+                    return JsonResponse(
+                        {"error": "Rate limit exceeded. Please try again later."},
+                        status=429,
+                    )
 
-            cache.set(cache_key, current_requests + 1, window)
+                # Increment counter with expiration
+                cache.set(cache_key, current_requests + 1, window)
+
+            except Exception as e:
+                # Log cache errors but don't fail the request
+                logger.warning(f"Rate limiting cache error: {e}")
+                # Continue without rate limiting if cache fails
 
 
 class InertiaShareMiddleware(MiddlewareMixin):
@@ -116,7 +123,7 @@ class InertiaShareMiddleware(MiddlewareMixin):
         # Share data that should be available to all components
         share(
             request,
-            app_name=settings.APP_NAME,
+            app_name=getattr(settings, "APP_NAME", "CareBridge"),
             user=lambda: self._get_user_data(request),
             auth=lambda: self._get_auth_data(request),
             notifications=lambda: self._get_notifications(request),
@@ -130,26 +137,46 @@ class InertiaShareMiddleware(MiddlewareMixin):
             return None
 
         cache_key = f"user_data:{request.user.id}"
-        user_data = cache.get(cache_key)
+
+        try:
+            user_data = cache.get(cache_key)
+        except Exception as e:
+            logger.warning(f"Cache error in _get_user_data: {e}")
+            user_data = None
 
         if user_data is None:
+            try:
+                from app.account.models import UserProfile
 
-            from app.account.models import UserProfile
+                user_profile = UserProfile.objects.get(user=request.user)
+                user_data = {
+                    "id": request.user.id,
+                    "email": request.user.email,
+                    "name": request.user.get_full_name() or request.user.username,
+                    "first_name": request.user.first_name,
+                    "last_name": request.user.last_name,
+                    "role": user_profile.role,
+                    "phone": user_profile.phone,
+                    "address": user_profile.address,
+                    "emergency_contact": user_profile.emergency_contact,
+                    "is_staff": request.user.is_staff,
+                }
 
-            user_profile = UserProfile.objects.get(user=request.user)
-            user_data = {
-                "id": request.user.id,
-                "email": request.user.email,
-                "name": request.user.get_full_name() or request.user.username,
-                "first_name": request.user.first_name,
-                "last_name": request.user.last_name,
-                "role": user_profile.role,
-                "phone": user_profile.phone,
-                "address": user_profile.address,
-                "emergency_contact": user_profile.emergency_contact,
-                "is_staff": request.user.is_staff,
-            }
-            cache.set(cache_key, user_data, 300)  # Cache for 5 minutes
+                try:
+                    cache.set(cache_key, user_data, 300)  # Cache for 5 minutes
+                except Exception as e:
+                    logger.warning(f"Failed to cache user data: {e}")
+
+            except Exception as e:
+                logger.warning(f"Error getting user profile: {e}")
+                # Fallback user data
+                user_data = {
+                    "id": request.user.id,
+                    "email": request.user.email,
+                    "name": request.user.get_full_name() or request.user.username,
+                    "role": "patient",
+                    "is_staff": request.user.is_staff,
+                }
 
         return user_data
 
@@ -182,51 +209,68 @@ class InertiaShareMiddleware(MiddlewareMixin):
             return {"unread_count": 0, "items": []}
 
         cache_key = f"notifications:{request.user.id}"
-        notifications_data = cache.get(cache_key)
+
+        try:
+            notifications_data = cache.get(cache_key)
+        except Exception as e:
+            logger.warning(f"Cache error in _get_notifications: {e}")
+            notifications_data = None
 
         if notifications_data is None:
+            try:
+                from app.notification.models import Notification
 
-            from app.notification.models import Notification
+                notifications = Notification.objects.filter(
+                    user=request.user, is_read=False
+                ).order_by("-created_at")[:10]
 
-            notifications = Notification.objects.filter(
-                user=request.user, is_read=False
-            ).order_by("-created_at")[:10]
+                notifications_data = {
+                    "unread_count": notifications.count(),
+                    "items": [
+                        {
+                            "id": notif.id,
+                            "type": notif.notification_type,
+                            "title": notif.title,
+                            "message": notif.message,
+                            "created_at": notif.created_at.isoformat(),
+                            "is_read": notif.is_read,
+                        }
+                        for notif in notifications
+                    ],
+                }
 
-            notifications_data = {
-                "unread_count": notifications.count(),
-                "items": [
-                    {
-                        "id": notif.id,
-                        "type": notif.notification_type,
-                        "title": notif.title,
-                        "message": notif.message,
-                        "created_at": notif.created_at.isoformat(),
-                        "is_read": notif.is_read,
-                    }
-                    for notif in notifications
-                ],
-            }
-            cache.set(cache_key, notifications_data, 60)  # Cache for 1 minute
+                try:
+                    cache.set(cache_key, notifications_data, 60)  # Cache for 1 minute
+                except Exception as e:
+                    logger.warning(f"Failed to cache notifications: {e}")
+
+            except Exception as e:
+                logger.warning(f"Error getting notifications: {e}")
+                notifications_data = {"unread_count": 0, "items": []}
 
         return notifications_data
 
     def _get_flash_messages(self, request):
         """Get Django messages for toast notifications."""
-        from django.contrib import messages
+        try:
+            from django.contrib import messages
 
-        flash_messages = []
-        storage = messages.get_messages(request)
+            flash_messages = []
+            storage = messages.get_messages(request)
 
-        for message in storage:
-            flash_messages.append(
-                {
-                    "message": str(message),
-                    "level": message.level_tag,
-                    "tags": message.tags,
-                }
-            )
+            for message in storage:
+                flash_messages.append(
+                    {
+                        "message": str(message),
+                        "level": message.level_tag,
+                        "tags": message.tags,
+                    }
+                )
 
-        return flash_messages
+            return flash_messages
+        except Exception as e:
+            logger.warning(f"Error getting flash messages: {e}")
+            return []
 
     def _get_meta_data(self, request):
         """Get meta data for the application."""

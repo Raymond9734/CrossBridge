@@ -1,11 +1,13 @@
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.core.cache import cache
 from datetime import datetime, timedelta
 from django.utils import timezone
-from app.core.services import BaseService
+from app.core.services import BaseService, CacheService
 from app.core.exceptions import NotFoundError, ValidationError, ConflictError
 from .models import Appointment, DoctorAvailability
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AppointmentService(BaseService):
@@ -128,8 +130,11 @@ class AppointmentService(BaseService):
                     status="pending",
                 )
 
-                # Clear cache
-                self._clear_appointment_cache(patient.id, doctor.id)
+                # Clear cache using CacheService
+                try:
+                    CacheService.invalidate_appointment_cache(patient.id, doctor.id)
+                except Exception as e:
+                    logger.warning(f"Failed to clear appointment cache: {e}")
 
                 try:
                     from app.notification.services import NotificationService
@@ -139,7 +144,7 @@ class AppointmentService(BaseService):
                         appointment
                     )
                 except Exception as e:
-                    self.logger.warning(f"Failed to send appointment notification: {e}")
+                    logger.warning(f"Failed to send appointment notification: {e}")
 
                 return appointment
 
@@ -148,7 +153,7 @@ class AppointmentService(BaseService):
                 if isinstance(e, (ValidationError, ConflictError, NotFoundError)):
                     raise  # Re-raise our custom exceptions as-is
 
-                self.logger.error(f"Unexpected error during appointment booking: {e}")
+                logger.error(f"Unexpected error during appointment booking: {e}")
                 raise ConflictError(
                     "Unable to complete the booking due to a system error. Please try again."
                 )
@@ -215,9 +220,13 @@ class AppointmentService(BaseService):
 
             return available_slots
 
-        return self.get_cached(cache_key, get_slots, timeout=300)
+        try:
+            return self.get_cached(cache_key, get_slots, timeout=300)
+        except Exception as e:
+            logger.warning(f"Cache error in get_available_slots: {e}")
+            # Return direct calculation if cache fails
+            return get_slots()
 
-    # Also fix the is_slot_available method to check 30-minute intervals
     def is_slot_available(self, doctor, date, time):
         """Check if a specific 30-minute time slot is available."""
         # Check if this exact time slot is in available slots
@@ -229,7 +238,6 @@ class AppointmentService(BaseService):
 
         return time in available_slots
 
-    # appointment/models.py - Fix get_time_slots method in DoctorAvailability
     def get_time_slots(self, slot_duration=30):
         """Generate time slots for this availability with proper 30-minute intervals."""
         slots = []
@@ -259,8 +267,13 @@ class AppointmentService(BaseService):
 
         appointment.cancel(cancelled_by, reason)
 
-        # Clear cache
-        self._clear_appointment_cache(appointment.patient.id, appointment.doctor.id)
+        # Clear cache using CacheService
+        try:
+            CacheService.invalidate_appointment_cache(
+                appointment.patient.id, appointment.doctor.id
+            )
+        except Exception as e:
+            logger.warning(f"Failed to clear appointment cache: {e}")
 
         return appointment
 
@@ -268,8 +281,13 @@ class AppointmentService(BaseService):
         """Confirm an appointment."""
         appointment.confirm()
 
-        # Clear cache
-        self._clear_appointment_cache(appointment.patient.id, appointment.doctor.id)
+        # Clear cache using CacheService
+        try:
+            CacheService.invalidate_appointment_cache(
+                appointment.patient.id, appointment.doctor.id
+            )
+        except Exception as e:
+            logger.warning(f"Failed to clear appointment cache: {e}")
 
         return appointment
 
@@ -282,7 +300,11 @@ class AppointmentService(BaseService):
                 "doctor", "patient"
             )
 
-        return self.get_cached(cache_key, get_appointments, timeout=300)
+        try:
+            return self.get_cached(cache_key, get_appointments, timeout=300)
+        except Exception as e:
+            logger.warning(f"Cache error in get_patient_appointments: {e}")
+            return get_appointments()
 
     def get_doctor_appointments(self, doctor, date=None):
         """Get appointments for a doctor."""
@@ -293,18 +315,18 @@ class AppointmentService(BaseService):
                 "patient", "doctor"
             )
 
-        return self.get_cached(cache_key, get_appointments, timeout=300)
+        try:
+            return self.get_cached(cache_key, get_appointments, timeout=300)
+        except Exception as e:
+            logger.warning(f"Cache error in get_doctor_appointments: {e}")
+            return get_appointments()
 
     def _clear_appointment_cache(self, patient_id, doctor_id):
-        """Clear appointment-related cache."""
-        cache_keys = [
-            f"patient_appointments:{patient_id}:*",
-            f"doctor_appointments:{doctor_id}:*",
-            f"available_slots:{doctor_id}:*",
-        ]
-
-        for key_pattern in cache_keys:
-            cache.delete_many(cache.keys(key_pattern))
+        """Clear appointment-related cache - DEPRECATED: Use CacheService instead."""
+        try:
+            CacheService.invalidate_appointment_cache(patient_id, doctor_id)
+        except Exception as e:
+            logger.warning(f"Failed to clear appointment cache: {e}")
 
 
 class DoctorAvailabilityService(BaseService):
@@ -329,9 +351,11 @@ class DoctorAvailabilityService(BaseService):
             availability.is_available = is_available
             availability.save()
 
-        # Clear cache
-        cache.delete(f"doctor_availability:{doctor_profile.user_profile.user.id}")
-        cache.delete(f"available_slots:{doctor_profile.user_profile.user.id}:*")
+        # Clear cache using CacheService
+        try:
+            CacheService.invalidate_doctor_cache(doctor_profile.user_profile.user.id)
+        except Exception as e:
+            logger.warning(f"Failed to clear availability cache: {e}")
 
         return availability
 
@@ -344,7 +368,11 @@ class DoctorAvailabilityService(BaseService):
                 "day_of_week", "start_time"
             )
 
-        return self.get_cached(cache_key, get_availability, timeout=3600)
+        try:
+            return self.get_cached(cache_key, get_availability, timeout=3600)
+        except Exception as e:
+            logger.warning(f"Cache error in get_doctor_availability: {e}")
+            return get_availability()
 
     def toggle_availability(self, availability_id):
         """Toggle availability status."""
@@ -352,9 +380,11 @@ class DoctorAvailabilityService(BaseService):
         availability.is_available = not availability.is_available
         availability.save()
 
-        # Clear cache
-        doctor_id = availability.doctor.user_profile.user.id
-        cache.delete(f"doctor_availability:{doctor_id}")
-        cache.delete(f"available_slots:{doctor_id}:*")
+        # Clear cache using CacheService
+        try:
+            doctor_id = availability.doctor.user_profile.user.id
+            CacheService.invalidate_doctor_cache(doctor_id)
+        except Exception as e:
+            logger.warning(f"Failed to clear availability cache: {e}")
 
         return availability

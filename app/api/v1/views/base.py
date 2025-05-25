@@ -8,16 +8,13 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 import logging
 
-# Import common models and services
 from app.account.models import UserProfile
 
 logger = logging.getLogger(__name__)
 
 
 class BaseAPIViewSet(viewsets.ViewSet):
-    """
-    Base ViewSet with common functionality
-    """
+    """Base ViewSet with common functionality"""
 
     permission_classes = [IsAuthenticated]
 
@@ -41,13 +38,19 @@ class BaseAPIViewSet(viewsets.ViewSet):
         return Response(response_data, status=status_code)
 
     def error_response(
-        self, error, status_code=status.HTTP_400_BAD_REQUEST, errors=None
+        self,
+        error,
+        status_code=status.HTTP_400_BAD_REQUEST,
+        errors=None,
+        error_code=None,
     ):
         """Standard error response format"""
         response_data = {"success": False, "error": error}
 
         if errors:
             response_data["errors"] = errors
+        if error_code:
+            response_data["error_code"] = error_code
 
         return Response(response_data, status=status_code)
 
@@ -60,9 +63,7 @@ class BaseAPIViewSet(viewsets.ViewSet):
 
 
 class BaseModelViewSet(viewsets.ModelViewSet):
-    """
-    Base ModelViewSet with common functionality
-    """
+    """Base ModelViewSet with common functionality"""
 
     permission_classes = [IsAuthenticated]
 
@@ -86,13 +87,19 @@ class BaseModelViewSet(viewsets.ModelViewSet):
         return Response(response_data, status=status_code)
 
     def error_response(
-        self, error, status_code=status.HTTP_400_BAD_REQUEST, errors=None
+        self,
+        error,
+        status_code=status.HTTP_400_BAD_REQUEST,
+        errors=None,
+        error_code=None,
     ):
         """Standard error response format"""
         response_data = {"success": False, "error": error}
 
         if errors:
             response_data["errors"] = errors
+        if error_code:
+            response_data["error_code"] = error_code
 
         return Response(response_data, status=status_code)
 

@@ -1,5 +1,3 @@
-# core/services.py - Updated CacheService with fallback handling
-
 """
 Base service classes for business logic.
 """
@@ -7,7 +5,6 @@ Base service classes for business logic.
 from abc import ABC, abstractmethod
 from django.core.cache import cache
 from django.db import transaction
-from django.conf import settings
 from .exceptions import NotFoundError
 import logging
 
@@ -15,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class BaseService(ABC):
-    """Base service class that provides common functionality."""
+    """
+    Base service class that provides common functionality.
+    """
 
     def __init__(self):
         self.logger = logger
@@ -69,52 +68,103 @@ class BaseService(ABC):
 
     def get_cached(self, cache_key, queryset_func, timeout=300):
         """Get cached data from cache or execute function."""
-        try:
-            result = cache.get(cache_key)
-            if result is None:
-                result = queryset_func()
-                cache.set(cache_key, result, timeout)
-            return result
-        except Exception as e:
-            # Cache failed, execute function directly
-            logger.warning(f"Cache operation failed: {e}")
-            return queryset_func()
+        result = cache.get(cache_key)
+        if result is None:
+            result = queryset_func()
+            cache.set(cache_key, result, timeout)
+        return result
 
 
 class CacheService:
-    """Service for managing cache operations with backend compatibility."""
+    """
+    Service for managing cache operations compatible with all Django cache backends.
+    """
 
     @staticmethod
-    def _is_redis_backend():
-        """Check if Redis is being used as cache backend."""
-        try:
-            backend = settings.CACHES["default"]["BACKEND"]
-            return "redis" in backend.lower()
-        except (KeyError, AttributeError):
-            return False
+    def _get_known_cache_keys(user_id):
+        """Get list of known cache keys for a user (no pattern matching needed)."""
+        import datetime
+
+        keys = [
+            f"user_data:{user_id}",
+            f"notifications:{user_id}",
+            f"user_appointments:{user_id}:all",
+            f"user_appointments:{user_id}:pending",
+            f"user_appointments:{user_id}:confirmed",
+            f"user_appointments:{user_id}:completed",
+            f"user_medical_records:{user_id}:all",
+            f"patient_appointments:{user_id}:all",
+            f"patient_appointments:{user_id}:confirmed",
+            f"patient_medical_records:{user_id}:all",
+        ]
+
+        # Add date-based keys for common date ranges
+        today = datetime.date.today()
+        for i in range(7):  # Clear cache for next 7 days
+            date = today + datetime.timedelta(days=i)
+            keys.extend(
+                [
+                    f"user_appointments:{user_id}:{date}",
+                    f"patient_appointments:{user_id}:{date}",
+                ]
+            )
+
+        # Add numbered variations for limits
+        for limit in [5, 10, 20, 50]:
+            keys.extend(
+                [
+                    f"user_medical_records:{user_id}:{limit}",
+                    f"patient_medical_records:{user_id}:{limit}",
+                ]
+            )
+
+        return keys
 
     @staticmethod
-    def _safe_cache_operation(operation, *args, **kwargs):
-        """Safely execute cache operations with error handling."""
-        try:
-            return operation(*args, **kwargs)
-        except Exception as e:
-            logger.warning(f"Cache operation failed: {e}")
-            return None
+    def _get_known_doctor_keys(doctor_id):
+        """Get list of known cache keys for a doctor."""
+        import datetime
 
-    @staticmethod
-    def _safe_delete_pattern(pattern):
-        """Safely delete cache keys by pattern, compatible with different backends."""
-        if CacheService._is_redis_backend():
-            try:
-                # Redis-specific deletion with pattern matching
-                keys = cache.keys(pattern)
-                if keys:  # Check if keys is not None or empty
-                    cache.delete_many(keys)
-                    return len(keys)
-            except (AttributeError, TypeError, Exception) as e:
-                logger.warning(f"Redis pattern deletion failed: {e}")
-        return 0
+        keys = [
+            f"doctor_availability:{doctor_id}",
+            f"doctor_appointments:{doctor_id}:all",
+            f"doctor_appointments:{doctor_id}:today",
+            f"doctor_patients:{doctor_id}",
+            f"doctor_medical_records:{doctor_id}:all",
+            f"doctor_patient_stats:{doctor_id}",
+            "doctors_by_specialty:all",
+            "available_doctors:all",
+        ]
+
+        # Add available slots for next 30 days
+        today = datetime.date.today()
+        for i in range(30):
+            date = today + datetime.timedelta(days=i)
+            keys.append(f"available_slots:{doctor_id}:{date}")
+
+        # Add numbered variations
+        for limit in [10, 20, 50]:
+            keys.append(f"doctor_medical_records:{doctor_id}:{limit}")
+
+        # Add specialty-based keys
+        specialties = [
+            "General Medicine",
+            "Cardiology",
+            "Dermatology",
+            "Pediatrics",
+            "Orthopedics",
+            "Gynecology",
+            "Internal Medicine",
+            "Surgery",
+            "Psychiatry",
+            "Radiology",
+            "Anesthesiology",
+            "Emergency Medicine",
+        ]
+        for specialty in specialties:
+            keys.append(f"doctors_by_specialty:{specialty}")
+
+        return keys
 
     @staticmethod
     def _safe_delete_keys(keys):
@@ -122,116 +172,75 @@ class CacheService:
         deleted_count = 0
         for key in keys:
             try:
-                if cache.delete(key):
+                result = cache.delete(key)
+                if result:  # Some backends return True/False for success
                     deleted_count += 1
             except Exception as e:
                 logger.warning(f"Failed to delete cache key {key}: {e}")
-        return deleted_count
 
-    @staticmethod
-    def safe_cache_get(key, default=None):
-        """Safely get value from cache."""
-        return CacheService._safe_cache_operation(cache.get, key, default)
-
-    @staticmethod
-    def safe_cache_set(key, value, timeout=300):
-        """Safely set value in cache."""
-        return CacheService._safe_cache_operation(cache.set, key, value, timeout)
-
-    @staticmethod
-    def safe_cache_delete(key):
-        """Safely delete key from cache."""
-        return CacheService._safe_cache_operation(cache.delete, key)
+        if deleted_count > 0:
+            logger.debug(f"Deleted {deleted_count} cache keys")
 
     @staticmethod
     def invalidate_user_cache(user_id):
         """Invalidate all cache entries for a user."""
-        cache_keys = [
-            f"user_data:{user_id}",
-            f"user_appointments:{user_id}:all",
-            f"user_appointments:{user_id}:pending",
-            f"user_appointments:{user_id}:confirmed",
-            f"user_appointments:{user_id}:completed",
-            f"user_medical_records:{user_id}:all",
-            f"user_medical_records:{user_id}:5",
-            f"user_medical_records:{user_id}:10",
-            f"notifications:{user_id}",
-            f"patient_appointments:{user_id}:all",
-            f"patient_appointments:{user_id}:confirmed",
-            f"patient_medical_records:{user_id}:all",
-            f"patient_medical_records:{user_id}:5",
-            f"patient_prescriptions:{user_id}:active",
-            f"patient_prescriptions:{user_id}:all",
-            f"patient_lab_results:{user_id}:all",
-        ]
-
-        deleted_count = CacheService._safe_delete_keys(cache_keys)
-        logger.info(f"Invalidated {deleted_count} cache keys for user {user_id}")
+        cache_keys = CacheService._get_known_cache_keys(user_id)
+        CacheService._safe_delete_keys(cache_keys)
 
     @staticmethod
     def invalidate_doctor_cache(doctor_id):
         """Invalidate cache entries for a doctor."""
-        cache_keys = [
-            f"doctor_availability:{doctor_id}",
-            f"doctor_appointments:{doctor_id}:all",
-            f"doctor_appointments:{doctor_id}:today",
-            f"doctor_patients:{doctor_id}",
-            f"doctor_medical_records:{doctor_id}:all",
-            f"doctor_medical_records:{doctor_id}:10",
-            f"doctor_patient_stats:{doctor_id}",
-            "doctors_by_specialty:all",
-        ]
-
-        # Also clear available slots for multiple dates
-        import datetime
-
-        today = datetime.date.today()
-        for i in range(30):  # Clear next 30 days
-            date = today + datetime.timedelta(days=i)
-            cache_keys.append(f"available_slots:{doctor_id}:{date}")
-
-        deleted_count = CacheService._safe_delete_keys(cache_keys)
-        logger.info(f"Invalidated {deleted_count} cache keys for doctor {doctor_id}")
+        cache_keys = CacheService._get_known_doctor_keys(doctor_id)
+        CacheService._safe_delete_keys(cache_keys)
 
     @staticmethod
     def invalidate_appointment_cache(patient_id, doctor_id):
         """Invalidate appointment-related cache."""
-        CacheService.invalidate_user_cache(patient_id)
-        CacheService.invalidate_doctor_cache(doctor_id)
+        # Combine both user cache invalidations
+        patient_keys = CacheService._get_known_cache_keys(patient_id)
+        doctor_keys = CacheService._get_known_doctor_keys(doctor_id)
+
+        # Add appointment-specific keys
+        appointment_keys = [
+            f"patient_appointments:{patient_id}:all",
+            f"patient_appointments:{patient_id}:pending",
+            f"patient_appointments:{patient_id}:confirmed",
+            f"doctor_appointments:{doctor_id}:all",
+            f"doctor_appointments:{doctor_id}:today",
+        ]
+
+        all_keys = list(set(patient_keys + doctor_keys + appointment_keys))
+        CacheService._safe_delete_keys(all_keys)
 
     @staticmethod
     def clear_all_cache():
         """Clear all cache (use with caution)."""
         try:
             cache.clear()
-            logger.info("Cleared all cache")
+            logger.info("All cache cleared successfully")
         except Exception as e:
             logger.warning(f"Failed to clear all cache: {e}")
 
     @staticmethod
-    def get_cache_info():
-        """Get information about current cache backend."""
+    def get_cache_stats():
+        """Get cache statistics if available."""
         try:
-            backend = settings.CACHES["default"]["BACKEND"]
-            is_redis = CacheService._is_redis_backend()
+            # This works with some backends like Redis, but not all
+            if hasattr(cache, "_cache") and hasattr(cache._cache, "info"):
+                return cache._cache.info()
+        except Exception:
+            pass
 
-            # Test cache operation
-            test_key = "cache_test"
-            CacheService.safe_cache_set(test_key, "test_value", 10)
-            test_result = CacheService.safe_cache_get(test_key)
-            CacheService.safe_cache_delete(test_key)
+        return {"message": "Cache stats not available for this backend"}
 
-            return {
-                "backend": backend,
-                "is_redis": is_redis,
-                "is_working": test_result == "test_value",
-                "status": "healthy" if test_result == "test_value" else "degraded",
-            }
-        except Exception as e:
-            return {
-                "backend": "unknown",
-                "is_redis": False,
-                "is_working": False,
-                "status": "failed",
-                "error": str(e),
-            }
+    @staticmethod
+    def invalidate_system_cache():
+        """Invalidate system-wide cache keys."""
+        system_keys = [
+            "system_stats",
+            "available_doctors:all",
+            "doctors_by_specialty:all",
+            "system_notifications",
+            "global_settings",
+        ]
+        CacheService._safe_delete_keys(system_keys)

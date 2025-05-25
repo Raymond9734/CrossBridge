@@ -184,18 +184,18 @@ else:
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 # Cache Configuration
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "IGNORE_EXCEPTIONS": True,  # Fail gracefully
-        },
-        "KEY_PREFIX": "carebridge",
-        "TIMEOUT": 300,  # Default timeout of 5 minutes
-    }
-}
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django_redis.cache.RedisCache",
+#         "LOCATION": REDIS_URL,
+#         "OPTIONS": {
+#             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+#             "IGNORE_EXCEPTIONS": True,  # Fail gracefully
+#         },
+#         "KEY_PREFIX": "carebridge",
+#         "TIMEOUT": 300,  # Default timeout of 5 minutes
+#     }
+# }
 
 # Session Configuration
 SESSION_COOKIE_AGE = 86400  # 24 hours
