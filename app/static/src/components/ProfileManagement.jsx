@@ -331,29 +331,30 @@ const ProfileManagement = ({ currentUser, showToast, onProfileUpdate }) => {
         </div>
 
         {/* Insurance Information Section */}
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
-            <Shield className="w-5 h-5 text-gray-600" />
-            Insurance Information
-          </h3>
-          
+        {currentUser?.role === 'patient' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Insurance Details</label>
-            <textarea
-              name="insuranceInfo"
-              value={formData.insuranceInfo}
-              onChange={handleInputChange}
-              rows={4}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-              placeholder="Insurance provider, policy number, group number, coverage details, etc."
-              disabled={isLoading}
-            />
-            <p className="mt-1 text-sm text-gray-500">
-              Include your insurance provider, policy number, group number, and any relevant coverage information.
-            </p>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
+              <Shield className="w-5 h-5 text-gray-600" />
+              Insurance Information
+            </h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Insurance Details</label>
+              <textarea
+                name="insuranceInfo"
+                value={formData.insuranceInfo}
+                onChange={handleInputChange}
+                rows={4}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                placeholder="Insurance provider, policy number, group number, coverage details, etc."
+                disabled={isLoading}
+              />
+              <p className="mt-1 text-sm text-gray-500">
+                Include your insurance provider, policy number, group number, and any relevant coverage information.
+              </p>
+            </div>
           </div>
-        </div>
-        
+        )}
         {/* Medical History Section - Only for Patients */}
         {currentUser?.role === 'patient' && (
           <div>
