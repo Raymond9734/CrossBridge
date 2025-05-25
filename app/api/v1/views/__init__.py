@@ -19,9 +19,7 @@ from .notifications import NotificationViewSet, NotificationPreferenceViewSet
 from .patients import PatientManagementViewSet
 from .system import (
     SearchViewSet,
-    ReportsViewSet,
     StatisticsViewSet,
-    FileUploadViewSet,
     SystemViewSet,
 )
 
@@ -48,9 +46,7 @@ __all__ = [
     "PatientManagementViewSet",
     # System & Utilities
     "SearchViewSet",
-    "ReportsViewSet",
     "StatisticsViewSet",
-    "FileUploadViewSet",
     "SystemViewSet",
     # Utility Functions
     "get_available_slots_ajax",
