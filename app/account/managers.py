@@ -53,7 +53,3 @@ class DoctorProfileManager(models.Manager):
         return self.filter(accepts_new_patients=True, is_available=True)
 
 
-# Update models to use custom managers
-# UserProfile.add_to_class("objects", UserProfileManager())
-# UserProfile.object1 = UserProfileManager()
-# DoctorProfile.add_to_class("objects", DoctorProfileManager())
