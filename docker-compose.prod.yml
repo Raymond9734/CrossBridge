@@ -1,26 +1,10 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=${DB_NAME:-carebridge}
-      - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
   # Redis Cache
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --save 900 1 --save 300 10
     volumes:
       - redis_data:/data
     healthcheck:
@@ -28,11 +12,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
 
   # Django Web Application
   web:
-    build: .
+    build: 
+      context: .
+      target: production
     ports:
       - "8000:8000"
     volumes:
@@ -46,109 +39,180 @@ services:
       - USE_POSTGRESS_DATABASE=True
       - DB_NAME=${DB_NAME:-CareBridgeDB}
       - DB_USER=${DB_USER:-CareBridgeDB_owner}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=ep-soft-cell-a2mq2vmi-pooler.eu-central-1.aws.neon.tech
-      - DB_PORT=5432
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=${DB_HOST:-ep-soft-cell-a2mq2vmi-pooler.eu-central-1.aws.neon.tech}
+      - DB_PORT=${DB_PORT:-5432}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/1
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@carebridge.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       # Gunicorn Configuration
-      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-3}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
       - GUNICORN_THREADS=${GUNICORN_THREADS:-2}
-      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-30}
+      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
       - GUNICORN_LOG_LEVEL=${GUNICORN_LOG_LEVEL:-info}
+      - GUNICORN_MAX_REQUESTS=${GUNICORN_MAX_REQUESTS:-1000}
+      - GUNICORN_MAX_REQUESTS_JITTER=${GUNICORN_MAX_REQUESTS_JITTER:-100}
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/system/health_check/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/system/health_check/", "--max-time", "10"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
   # Celery Worker
   celery:
-    build: .
-    command: celery -A CareBridge worker -l info --concurrency=4
+    build: 
+      context: .
+      target: production
+    command: celery -A CareBridge worker -l info --concurrency=4 --max-tasks-per-child=1000 --time-limit=300 --soft-time-limit=240
     volumes:
       - media_volume:/app/media
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-False}
       - USE_POSTGRESS_DATABASE=True
-      - DB_NAME=${DB_NAME:-carebridge}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=db
-      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-CareBridgeDB}
+      - DB_USER=${DB_USER:-CareBridgeDB_owner}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=${DB_HOST:-ep-soft-cell-a2mq2vmi-pooler.eu-central-1.aws.neon.tech}
+      - DB_PORT=${DB_PORT:-5432}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/1
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
+      web:
+        condition: service_started
     healthcheck:
-      test: ["CMD", "celery", "-A", "CareBridge", "inspect", "ping"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "celery", "-A", "CareBridge", "inspect", "ping", "-t", "10"]
+      interval: 60s
+      timeout: 30s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
   # Celery Beat Scheduler
   celery-beat:
-    build: .
-    command: celery -A CareBridge beat -l info
+    build: 
+      context: .
+      target: production
+    command: celery -A CareBridge beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
       - media_volume:/app/media
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-False}
       - USE_POSTGRESS_DATABASE=True
-      - DB_NAME=${DB_NAME:-carebridge}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=db
-      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-CareBridgeDB}
+      - DB_USER=${DB_USER:-CareBridgeDB_owner}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=${DB_HOST:-ep-soft-cell-a2mq2vmi-pooler.eu-central-1.aws.neon.tech}
+      - DB_PORT=${DB_PORT:-5432}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/1
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
       web:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
 
-  # Nginx Reverse Proxy (Optional)
+  # Nginx Reverse Proxy
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - static_volume:/app/staticfiles:ro
       - media_volume:/app/media:ro
       - ./ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
     depends_on:
       - web
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health", "--max-time", "5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # Redis Monitoring (Optional)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+      - HTTP_USER=${REDIS_COMMANDER_USER:-admin}
+      - HTTP_PASSWORD=${REDIS_COMMANDER_PASSWORD:-admin123}
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
     restart: unless-stopped
     profiles:
-      - nginx
+      - monitoring
+
+  # Log aggregation
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    restart: unless-stopped
+    profiles:
+      - logging
 
 volumes:
-  postgres_data:
   redis_data:
+    driver: local
   static_volume:
+    driver: local
   media_volume:
+    driver: local
+  nginx_cache:
+    driver: local
+  loki_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
