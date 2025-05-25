@@ -23,7 +23,7 @@ const MedicalRecords = ({ showToast }) => {
       return matchesSearch && matchesFilter;
     });
     setFilteredRecords(filtered);
-  }, [medical_records, searchTerm, filterType]);
+  }, [ searchTerm, filterType]);
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
