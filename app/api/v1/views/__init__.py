@@ -14,8 +14,6 @@ from .accounts import (
 from .appointments import AppointmentViewSet, AppointmentBookingViewSet
 from .medical_records import (
     MedicalRecordViewSet,
-    PrescriptionViewSet,
-    LabResultViewSet,
 )
 from .notifications import NotificationViewSet, NotificationPreferenceViewSet
 from .patients import PatientManagementViewSet
@@ -43,8 +41,6 @@ __all__ = [
     "AppointmentBookingViewSet",
     # Medical Records
     "MedicalRecordViewSet",
-    "PrescriptionViewSet",
-    "LabResultViewSet",
     # Notifications
     "NotificationViewSet",
     "NotificationPreferenceViewSet",
