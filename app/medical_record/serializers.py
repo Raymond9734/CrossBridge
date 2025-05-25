@@ -32,7 +32,6 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
             "medications",
             "medical_history",
             "is_sensitive",
-            "prescriptions",
             "patient_name",
             "doctor_name",
             "bmi",
