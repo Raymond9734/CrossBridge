@@ -301,7 +301,7 @@ const ScheduleManagement = ({ showToast }) => {
     try {
       const csrfToken = getCSRFToken();
       
-      const response = await fetch('/api/v1/toggle-availability/', {
+      const response = await fetch('/api/v1/appointment-booking/toggle_availability/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
