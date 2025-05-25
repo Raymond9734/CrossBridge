@@ -169,27 +169,88 @@ class AppointmentService(BaseService):
             if not availability:
                 return []
 
-            # Generate time slots
-            slots = availability.get_time_slots()
+            # Generate 30-minute time slots
+            slots = []
+            current_time = availability.start_time
+            slot_duration = 30  # minutes
 
-            # Filter out booked slots
+            while current_time < availability.end_time:
+                # Calculate end time for this slot
+                start_datetime = datetime.combine(date, current_time)
+                end_datetime = start_datetime + timedelta(minutes=slot_duration)
+                end_time = end_datetime.time()
+
+                # Check if the entire 30-minute slot fits within availability
+                if end_time <= availability.end_time:
+                    slots.append(current_time)
+
+                # Move to next 30-minute slot
+                current_time = end_time
+
+            # Filter out booked slots - check for ANY overlap with existing appointments
             booked_appointments = Appointment.objects.filter(
                 doctor=doctor,
                 appointment_date=date,
                 status__in=["pending", "confirmed", "in_progress"],
             )
 
-            booked_times = {apt.start_time for apt in booked_appointments}
-            available_slots = [slot for slot in slots if slot not in booked_times]
+            available_slots = []
+            for slot_time in slots:
+                slot_start = datetime.combine(date, slot_time)
+                slot_end = slot_start + timedelta(minutes=30)
+
+                # Check if this slot conflicts with any existing appointment
+                is_available = True
+                for apt in booked_appointments:
+                    apt_start = datetime.combine(date, apt.start_time)
+                    apt_end = datetime.combine(date, apt.end_time)
+
+                    # Check for any overlap
+                    if slot_start < apt_end and slot_end > apt_start:
+                        is_available = False
+                        break
+
+                if is_available:
+                    available_slots.append(slot_time)
 
             return available_slots
 
         return self.get_cached(cache_key, get_slots, timeout=300)
 
+    # Also fix the is_slot_available method to check 30-minute intervals
     def is_slot_available(self, doctor, date, time):
-        """Check if a specific time slot is available."""
+        """Check if a specific 30-minute time slot is available."""
+        # Check if this exact time slot is in available slots
         available_slots = self.get_available_slots(doctor, date)
+
+        # Convert time to proper format if needed
+        if isinstance(time, str):
+            time = datetime.strptime(time, "%H:%M").time()
+
         return time in available_slots
+
+    # appointment/models.py - Fix get_time_slots method in DoctorAvailability
+    def get_time_slots(self, slot_duration=30):
+        """Generate time slots for this availability with proper 30-minute intervals."""
+        slots = []
+        current_time = self.start_time
+
+        while current_time < self.end_time:
+            # Calculate end time for this slot
+            current_datetime = datetime.combine(datetime.today(), current_time)
+            end_datetime = current_datetime + timedelta(minutes=slot_duration)
+            end_time = end_datetime.time()
+
+            # Only add slot if it completely fits within availability window
+            if end_time <= self.end_time:
+                slots.append(current_time)
+            else:
+                break  # No more complete slots fit
+
+            # Move to next slot
+            current_time = end_time
+
+        return slots
 
     def cancel_appointment(self, appointment, cancelled_by, reason=""):
         """Cancel an appointment."""
