@@ -2,8 +2,7 @@ from django.db import transaction
 from django.core.cache import cache
 from django.utils import timezone
 from app.core.services import BaseService
-from app.core.exceptions import ValidationError
-from .models import Notification, NotificationTemplate, NotificationPreference
+from .models import Notification, NotificationPreference
 from datetime import timedelta
 
 
@@ -57,87 +56,6 @@ class NotificationService(BaseService):
         cache.delete(f"user_notifications:{user.id}")
 
         return notification
-
-    def create_from_template(self, user, template_name, context, **kwargs):
-        """Create notification from template with fallback."""
-        try:
-            template = NotificationTemplate.objects.get(
-                name=template_name, is_active=True
-            )
-            title, message = template.render(context)
-
-            # Use template defaults for delivery channels if not specified
-            delivery_channels = kwargs.pop("delivery_channels", None)
-            if delivery_channels is None:
-                delivery_channels = []
-                if template.default_send_email:
-                    delivery_channels.append("email")
-                if template.default_send_sms:
-                    delivery_channels.append("sms")
-                if template.default_send_push:
-                    delivery_channels.append("push")
-
-            return self.create_notification(
-                user=user,
-                notification_type=template.notification_type,
-                title=title,
-                message=message,
-                delivery_channels=delivery_channels,
-                **kwargs,
-            )
-
-        except NotificationTemplate.DoesNotExist:
-            # FALLBACK: Create a basic notification without template
-            self.logger.warning(
-                f"Notification template '{template_name}' not found. Using fallback."
-            )
-
-            # Default fallback messages based on template name
-            fallback_messages = {
-                "appointment_request": {
-                    "title": "New Appointment Request",
-                    "message": f"You have a new appointment request from {context.get('patient_name', 'a patient')}.",
-                    "type": "appointment_confirmed",
-                },
-                "appointment_confirmed": {
-                    "title": "Appointment Confirmed",
-                    "message": f"Your appointment with {context.get('doctor_name', 'your doctor')} has been confirmed.",
-                    "type": "appointment_confirmed",
-                },
-                "appointment_cancelled": {
-                    "title": "Appointment Cancelled",
-                    "message": "Your appointment has been cancelled.",
-                    "type": "appointment_cancelled",
-                },
-                "appointment_reminder": {
-                    "title": "Appointment Reminder",
-                    "message": f"You have an upcoming appointment with {context.get('doctor_name', 'your doctor')}.",
-                    "type": "appointment_reminder",
-                },
-                "medical_record_updated": {
-                    "title": "Medical Record Updated",
-                    "message": "Your medical record has been updated.",
-                    "type": "medical_record_updated",
-                },
-            }
-
-            fallback = fallback_messages.get(
-                template_name,
-                {
-                    "title": "Notification",
-                    "message": "You have a new notification.",
-                    "type": "system_message",
-                },
-            )
-
-            return self.create_notification(
-                user=user,
-                notification_type=fallback["type"],
-                title=fallback["title"],
-                message=fallback["message"],
-                delivery_channels=["push"],  # Default to push notification only
-                **kwargs,
-            )
 
     def send_appointment_request_notification(self, appointment):
         """Send notification when appointment is requested."""
