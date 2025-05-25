@@ -1,17 +1,95 @@
 import React, { useState, useEffect } from 'react';
-import { User, Search } from 'lucide-react';
-import { usePage, router } from '@inertiajs/react';
+import { User, Search, RefreshCw } from 'lucide-react';
 
-// Appointments List Component
 const AppointmentsList = ({ userRole, showToast }) => {
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredAppointments, setFilteredAppointments] = useState([]);
-  
-  // Get appointments from Inertia.js props
-  const props = usePage().props;
-  const appointments = props.appointments_list || props.appointments || [];
-  
+  const [appointments, setAppointments] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
+
+  // API utility function
+  const apiCall = async (url, options = {}) => {
+    const getCSRFToken = () => {
+      const metaTag = document.querySelector('meta[name=csrf-token]');
+      const tokenFromMeta = metaTag?.getAttribute('content') || metaTag?.textContent || '';
+      
+      const getCookie = (name) => {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      };
+      
+      return tokenFromMeta || getCookie('csrftoken') || '';
+    };
+
+    const csrfToken = getCSRFToken();
+    
+    const defaultOptions = {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+        'X-CSRF-Token': csrfToken,
+      }
+    };
+
+    const response = await fetch(url, { ...defaultOptions, ...options });
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'API request failed');
+    }
+    
+    return data;
+  };
+
+  // Fetch appointments from API
+  const fetchAppointments = async (statusFilter = filter, searchQuery = searchTerm) => {
+    setIsFetching(true);
+    try {
+      // Build query parameters
+      const params = new URLSearchParams();
+      if (statusFilter && statusFilter !== 'all') {
+        params.append('status', statusFilter);
+      }
+      if (searchQuery) {
+        params.append('search', searchQuery);
+      }
+      
+      const queryString = params.toString();
+      const url = `/api/v1/appointments/${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await apiCall(url);
+      
+      if (response.success) {
+        setAppointments(response.appointments || []);
+      } else {
+        console.error('Failed to fetch appointments:', response.error);
+        showToast('Failed to load appointments data', 'error');
+      }
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+      showToast('Failed to load appointments data', 'error');
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // Initial data load
+  useEffect(() => {
+    fetchAppointments();
+  }, []);
+
   // Filter appointments when data, filter, or search changes
   useEffect(() => {
     let filtered = appointments.filter(appointment => {
@@ -26,15 +104,7 @@ const AppointmentsList = ({ userRole, showToast }) => {
 
   const handleFilterChange = (newFilter) => {
     setFilter(newFilter);
-    // Update URL with filter parameter using Inertia.js
-    router.get('/appointments/', { 
-      status: newFilter === 'all' ? '' : newFilter,
-      search: searchTerm || '' 
-    }, { 
-      preserveState: true,
-      preserveScroll: true,
-      only: ['appointments_list'] // Only reload appointments data
-    });
+    fetchAppointments(newFilter, searchTerm);
   };
 
   const handleSearchChange = (newSearch) => {
@@ -42,50 +112,84 @@ const AppointmentsList = ({ userRole, showToast }) => {
     // Debounce search to avoid too many requests
     clearTimeout(window.searchTimeout);
     window.searchTimeout = setTimeout(() => {
-      router.get('/appointments/', { 
-        status: filter === 'all' ? '' : filter,
-        search: newSearch 
-      }, { 
-        preserveState: true,
-        preserveScroll: true,
-        only: ['appointments_list'] // Only reload appointments data
-      });
+      fetchAppointments(filter, newSearch);
     }, 500);
   };
 
-  const handleViewAppointment = (appointmentId) => {
-    showToast('Appointment details modal coming soon', 'info');
-    // TODO: Implement appointment details modal
+  const handleRefresh = () => {
+    fetchAppointments(filter, searchTerm);
   };
 
-  const handleEditAppointment = (appointmentId) => {
-    showToast('Edit appointment functionality coming soon', 'info');
-    // TODO: Implement edit appointment functionality
-  };
-
-  const handleCancelAppointment = (appointmentId) => {
+  const handleCancelAppointment = async (appointmentId) => {
     if (!confirm('Are you sure you want to cancel this appointment?')) return;
     
-    // TODO: Implement cancel appointment
-    router.post('/api/appointments/cancel/', {
-      appointment_id: appointmentId
-    }, {
-      onSuccess: () => {
+    setIsLoading(true);
+    
+    try {
+      const response = await apiCall(`/api/v1/appointments/${appointmentId}/cancel/`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Cancelled by user' })
+      });
+      
+      if (response.success) {
         showToast('Appointment cancelled successfully', 'success');
-      },
-      onError: () => {
-        showToast('Failed to cancel appointment', 'error');
+        fetchAppointments(filter, searchTerm);
+      } else {
+        showToast(response.error || 'Failed to cancel appointment', 'error');
       }
-    });
+    } catch (error) {
+      console.error('Error cancelling appointment:', error);
+      showToast('Failed to cancel appointment', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleConfirmAppointment = async (appointmentId) => {
+    if (userRole !== 'doctor') return;
+    
+    setIsLoading(true);
+    
+    try {
+      const response = await apiCall(`/api/v1/appointments/${appointmentId}/confirm/`, {
+        method: 'POST'
+      });
+      
+      if (response.success) {
+        showToast('Appointment confirmed successfully', 'success');
+        fetchAppointments(filter, searchTerm);
+      } else {
+        showToast(response.error || 'Failed to confirm appointment', 'error');
+      }
+    } catch (error) {
+      console.error('Error confirming appointment:', error);
+      showToast('Failed to confirm appointment', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
       <div className="p-6 border-b border-gray-200">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h2 className="text-xl font-semibold text-gray-900">Appointments</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold text-gray-900">Appointments</h2>
+            {isFetching && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-teal-600"></div>
+            )}
+          </div>
           
           <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={handleRefresh}
+              className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
+              disabled={isFetching}
+            >
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
@@ -94,6 +198,7 @@ const AppointmentsList = ({ userRole, showToast }) => {
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                disabled={isFetching}
               />
             </div>
             
@@ -101,6 +206,7 @@ const AppointmentsList = ({ userRole, showToast }) => {
               value={filter}
               onChange={(e) => handleFilterChange(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              disabled={isFetching}
             >
               <option value="all">All Status</option>
               <option value="confirmed">Confirmed</option>
@@ -112,103 +218,119 @@ const AppointmentsList = ({ userRole, showToast }) => {
         </div>
       </div>
       
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                {userRole === 'doctor' ? 'Patient' : 'Doctor'}
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date & Time
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Type
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredAppointments.length > 0 ? (
-              filteredAppointments.map(appointment => (
-                <tr key={appointment.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
-                        <User className="w-4 h-4 text-teal-600" />
+      {/* Loading state for initial fetch */}
+      {isFetching && appointments.length === 0 ? (
+        <div className="p-6">
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+            <span className="ml-3 text-gray-600">Loading appointments...</span>
+          </div>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {userRole === 'doctor' ? 'Patient' : 'Doctor'}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date & Time
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAppointments.length > 0 ? (
+                filteredAppointments.map(appointment => (
+                  <tr key={appointment.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
+                          <User className="w-4 h-4 text-teal-600" />
+                        </div>
+                        <div className="ml-3">
+                          <p className="text-sm font-medium text-gray-900">
+                            {userRole === 'doctor' ? appointment.patient : appointment.doctor}
+                          </p>
+                        </div>
                       </div>
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-900">
-                          {userRole === 'doctor' ? appointment.patient : appointment.doctor}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{appointment.date}</div>
-                    <div className="text-sm text-gray-500">{appointment.time}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-900">{appointment.type}</span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      appointment.status === 'confirmed' 
-                        ? 'bg-green-100 text-green-800'
-                        : appointment.status === 'pending'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : appointment.status === 'completed'
-                        ? 'bg-blue-100 text-blue-800'
-                        : appointment.status === 'cancelled'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {appointment.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex gap-2">
-                      <button 
-                        className="text-teal-600 hover:text-teal-900"
-                        onClick={() => handleViewAppointment(appointment.id)}
-                      >
-                        View
-                      </button>
-                      {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
-                        <>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{appointment.date}</div>
+                      <div className="text-sm text-gray-500">{appointment.time}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-900">{appointment.type}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        appointment.status === 'confirmed' 
+                          ? 'bg-green-100 text-green-800'
+                          : appointment.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : appointment.status === 'completed'
+                          ? 'bg-blue-100 text-blue-800'
+                          : appointment.status === 'cancelled'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {appointment.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex gap-2">
+                        <button 
+                          className="text-teal-600 hover:text-teal-900"
+                          onClick={() => showToast('Appointment details modal coming soon', 'info')}
+                          disabled={isLoading || isFetching}
+                        >
+                          View
+                        </button>
+                        
+                        {/* Doctor-specific actions */}
+                        {userRole === 'doctor' && appointment.status === 'pending' && (
                           <button 
-                            className="text-blue-600 hover:text-blue-900"
-                            onClick={() => handleEditAppointment(appointment.id)}
+                            className="text-green-600 hover:text-green-900"
+                            onClick={() => handleConfirmAppointment(appointment.id)}
+                            disabled={isLoading || isFetching}
                           >
-                            Edit
+                            Confirm
                           </button>
+                        )}
+                        
+                        {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
                           <button 
                             className="text-red-600 hover:text-red-900"
                             onClick={() => handleCancelAppointment(appointment.id)}
+                            disabled={isLoading || isFetching}
                           >
                             Cancel
                           </button>
-                        </>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
+                    {appointments.length === 0 ? 'No appointments found' : 'No appointments match your search criteria'}
                   </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                  {appointments.length === 0 ? 'No appointments found' : 'No appointments match your search criteria'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
