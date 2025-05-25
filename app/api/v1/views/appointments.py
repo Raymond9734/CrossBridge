@@ -8,6 +8,14 @@ from rest_framework import status
 from django.contrib.auth.models import User
 from datetime import datetime
 
+from app.core.exceptions import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    RateLimitExceededError,
+    ValidationError,
+)
+
 from .base import BaseAPIViewSet, BaseModelViewSet
 from app.account.models import DoctorProfile
 from app.appointment.models import Appointment
@@ -372,7 +380,7 @@ class AppointmentBookingViewSet(BaseAPIViewSet):
 
     @action(detail=False, methods=["post"])
     def book(self, request):
-        """Book a new appointment."""
+        """Book a new appointment with enhanced error handling."""
         try:
             serializer = AppointmentBookingSerializer(data=request.data)
             if serializer.is_valid():
@@ -394,13 +402,76 @@ class AppointmentBookingViewSet(BaseAPIViewSet):
                 )
 
             return self.error_response(
-                "Booking failed",
+                "Invalid booking data provided",
                 status_code=status.HTTP_400_BAD_REQUEST,
                 errors=serializer.errors,
             )
 
+        except ValidationError as e:
+            # Handle validation errors (e.g., invalid data, business rule violations)
+            logger.warning(
+                f"Appointment booking validation error for user {request.user.id}: {e}"
+            )
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error_code="validation_error",
+            )
+
+        except ConflictError as e:
+            # Handle conflict errors (e.g., time slot no longer available, doctor unavailable)
+            logger.warning(
+                f"Appointment booking conflict for user {request.user.id}: {e}"
+            )
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_409_CONFLICT,
+                error_code="conflict_error",
+            )
+
+        except PermissionDeniedError as e:
+            # Handle permission errors (e.g., trying to book with unavailable doctor)
+            logger.warning(
+                f"Appointment booking permission denied for user {request.user.id}: {e}"
+            )
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_403_FORBIDDEN,
+                error_code="permission_denied",
+            )
+
+        except NotFoundError as e:
+            # Handle not found errors (e.g., doctor doesn't exist)
+            logger.warning(
+                f"Appointment booking resource not found for user {request.user.id}: {e}"
+            )
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_404_NOT_FOUND,
+                error_code="not_found",
+            )
+
+        except RateLimitExceededError as e:
+            # Handle rate limiting errors
+            logger.warning(
+                f"Rate limit exceeded for appointment booking by user {request.user.id}: {e}"
+            )
+            return self.error_response(
+                message="Too many booking attempts. Please wait before trying again.",
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                error_code="rate_limit_exceeded",
+            )
+
         except Exception as e:
-            return self.handle_exception(e, str(e))
+            # Generic fallback for unexpected errors
+            logger.error(
+                f"Unexpected error during appointment booking for user {request.user.id}: {e}"
+            )
+            return self.error_response(
+                message="An unexpected error occurred while booking the appointment. Please try again.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                error_code="internal_error",
+            )
 
     @action(detail=False, methods=["get"])
     def available_doctors(self, request):
