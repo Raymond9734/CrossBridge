@@ -1,7 +1,6 @@
 # CareBridge/settings.py - Enhanced Configuration
 """
-Enhanced Django settings for CareBridge project with modular architecture,
-performance optimizations, and security improvements.
+Enhanced Django settings for CareBridge project with Docker, Redis, and Celery support.
 """
 
 import os
@@ -95,46 +94,87 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "CareBridge.wsgi.application"
 
-# Database Configuration
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+# Database Configuration - Docker compatible
+DATABASE_URL = os.environ.get("USE_POSTGRESS_DATABASE")
+if DATABASE_URL:
+    # Docker/Production - use DATABASE_URL
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME"),
+            "USER": config("DB_USER"),
+            "PASSWORD": config("DB_PASSWORD"),
+            "HOST": config("DB_HOST"),
+            "PORT": config("DB_PORT"),
+        }
     }
-}
+else:
+    # Development fallback - SQLite
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
-# For production with PostgreSQL:
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": config("DB_NAME", default="carebridge"),
-#         "USER": config("DB_USER", default="postgres"),
-#         "PASSWORD": config("DB_PASSWORD", default="password"),
-#         "HOST": config("DB_HOST", default="localhost"),
-#         "PORT": config("DB_PORT", default="5432"),
-#     }
-# }
+# Redis Configuration
+REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 
-# Cache Configuration (optional for development)
+# Cache Configuration
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": config("REDIS_URL", default="redis://127.0.0.1:6379/1"),
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "IGNORE_EXCEPTIONS": True,  # Fail gracefully
         },
         "KEY_PREFIX": "carebridge",
         "TIMEOUT": 300,  # Default timeout of 5 minutes
     }
 }
 
-
 # Session Configuration
 SESSION_COOKIE_AGE = 86400  # 24 hours
 SESSION_SAVE_EVERY_REQUEST = True
 
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-SESSION_CACHE_ALIAS = "default"
+# Use Redis for sessions in production
+if not DEBUG:
+    SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+    SESSION_CACHE_ALIAS = "default"
+
+# Celery Configuration
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
+CELERY_ENABLE_UTC = True
+
+# Celery Beat Configuration
+CELERY_BEAT_SCHEDULE = {
+    "send-appointment-reminders": {
+        "task": "app.appointment.tasks.send_appointment_reminders",
+        "schedule": 60.0 * 60,  # Every hour
+    },
+    "cleanup-expired-appointments": {
+        "task": "app.appointment.tasks.cleanup_expired_appointments",
+        "schedule": 60.0 * 60 * 24,  # Daily
+    },
+    "mark-no-show-appointments": {
+        "task": "app.appointment.tasks.mark_no_show_appointments",
+        "schedule": 60.0 * 30,  # Every 30 minutes
+    },
+    "process-pending-notifications": {
+        "task": "app.notification.tasks.process_pending_notifications",
+        "schedule": 60.0 * 5,  # Every 5 minutes
+    },
+    "cleanup-old-notifications": {
+        "task": "app.notification.tasks.cleanup_old_notifications",
+        "schedule": 60.0 * 60 * 24,  # Daily
+    },
+}
 
 # Django REST Framework Configuration
 REST_FRAMEWORK = {
@@ -159,6 +199,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "100/hour",
         "user": "1000/hour",
+        "appointment_booking": "10/min",
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
@@ -196,12 +237,23 @@ SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
+# Production Security Settings
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
@@ -283,8 +335,6 @@ if DEBUG:
         "debug_toolbar.panels.cache.CachePanel",
         "debug_toolbar.panels.signals.SignalsPanel",
         "debug_toolbar.panels.redirects.RedirectsPanel",
-        # Remove profiling panel to fix conflict:
-        # 'debug_toolbar.panels.profiling.ProfilingPanel',
     ]
 
     DEBUG_TOOLBAR_CONFIG = {
@@ -293,7 +343,16 @@ if DEBUG:
     }
 
 # Email Configuration
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+if DEBUG:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = config("EMAIL_HOST", default="smtp.gmail.com")
+    EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+    EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+    EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+    EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+    DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@carebridge.com")
 
 # Create logs directory
 LOGS_DIR = BASE_DIR / "logs"
@@ -347,11 +406,6 @@ LOGGING = {
             "backupCount": 5,
             "formatter": "verbose",
         },
-        "mail_admins": {
-            "level": "ERROR",
-            "class": "django.utils.log.AdminEmailHandler",
-            "include_html": True,
-        },
     },
     "loggers": {
         "django": {
@@ -360,7 +414,7 @@ LOGGING = {
             "propagate": False,
         },
         "django.request": {
-            "handlers": ["file_error", "console", "mail_admins"],
+            "handlers": ["file_error", "console"],
             "level": "ERROR",
             "propagate": False,
         },
@@ -369,19 +423,9 @@ LOGGING = {
             "level": "DEBUG" if DEBUG else "INFO",
             "propagate": False,
         },
-        "app": {  # Your app logger
+        "app": {
             "handlers": ["console", "file_app", "file_error"],
             "level": "DEBUG" if DEBUG else "INFO",
-            "propagate": False,
-        },
-        "app.frontend": {  # Frontend views logger
-            "handlers": ["console", "file_app", "file_error"],
-            "level": "DEBUG",
-            "propagate": False,
-        },
-        "app.api": {  # API logger
-            "handlers": ["console", "file_app", "file_error"],
-            "level": "DEBUG",
             "propagate": False,
         },
         "celery": {
@@ -396,18 +440,11 @@ LOGGING = {
     },
 }
 
-# Email configuration for error notifications
+# Error notifications for production
 if not DEBUG:
     ADMINS = [
-        ("Admin", "admin@carebridge.com"),
+        ("Admin", config("ADMIN_EMAIL", default="rymadara97@gmail.com")),
     ]
-
-    EMAIL_HOST = "smtp.gmail.com"  # Configure your SMTP
-    EMAIL_PORT = 587
-    EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
-    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
-    DEFAULT_FROM_EMAIL = "noreply@carebridge.com"
 
 # Create required directories
 (BASE_DIR / "media").mkdir(exist_ok=True)

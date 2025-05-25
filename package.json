@@ -5,6 +5,7 @@
         "build-css": "tailwindcss -i ./app/static/src/styles/main.css -o ./app/static/dist/main.css --watch",
         "preview": "vite preview"
     },
+    
     "devDependencies": {
         "autoprefixer": "^10.4.20",
         "postcss": "^8.4.47",
