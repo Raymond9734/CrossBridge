@@ -21,8 +21,6 @@ from .v1.views import (
     AppointmentBookingViewSet,
     # Medical Records
     MedicalRecordViewSet,
-    PrescriptionViewSet,
-    LabResultViewSet,
     # Notifications
     NotificationViewSet,
     NotificationPreferenceViewSet,
@@ -62,8 +60,7 @@ router.register(
 
 # Medical Records routes
 router.register(r"medical-records", MedicalRecordViewSet, basename="medicalrecord")
-router.register(r"prescriptions", PrescriptionViewSet, basename="prescription")
-router.register(r"lab-results", LabResultViewSet, basename="labresult")
+
 
 # Notifications routes
 router.register(r"notifications", NotificationViewSet, basename="notification")
