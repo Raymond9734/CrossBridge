@@ -16,7 +16,6 @@ from .medical_records import (
     MedicalRecordViewSet,
     PrescriptionViewSet,
     LabResultViewSet,
-    ReviewViewSet,
 )
 from .notifications import NotificationViewSet, NotificationPreferenceViewSet
 from .patients import PatientManagementViewSet
@@ -27,6 +26,7 @@ from .system import (
     FileUploadViewSet,
     SystemViewSet,
 )
+
 from .utils import get_available_slots_ajax, get_available_doctors_ajax
 
 __all__ = [
@@ -45,7 +45,6 @@ __all__ = [
     "MedicalRecordViewSet",
     "PrescriptionViewSet",
     "LabResultViewSet",
-    "ReviewViewSet",
     # Notifications
     "NotificationViewSet",
     "NotificationPreferenceViewSet",
