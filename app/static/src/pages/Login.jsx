@@ -54,7 +54,7 @@ export default function Login() {
             // Using Inertia.js to submit form
             router.post('/login/', formData, {
                 onSuccess: () => {
-                    // Redirect will be handled by backend
+                    window.location.reload()
                 },
                 onError: (errors) => {
                     setErrors(errors);
