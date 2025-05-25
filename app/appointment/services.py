@@ -2,8 +2,9 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from django.core.cache import cache
 from datetime import datetime, timedelta
+from django.utils import timezone
 from app.core.services import BaseService
-from app.core.exceptions import ValidationError, ConflictError
+from app.core.exceptions import NotFoundError, ValidationError, ConflictError
 from .models import Appointment, DoctorAvailability
 
 
@@ -22,44 +23,132 @@ class AppointmentService(BaseService):
         appointment_type,
         patient_notes="",
     ):
-        """Book an appointment."""
+        """Book an appointment with proper exception handling."""
         try:
             doctor = User.objects.get(id=doctor_id)
         except User.DoesNotExist:
-            raise ValidationError("Doctor not found")
+            raise NotFoundError("The selected doctor was not found.")
+
+        # Validate doctor is actually a doctor
+        try:
+            doctor_profile = doctor.userprofile.doctorprofile
+            if not doctor_profile.is_available:
+                raise ValidationError(
+                    "The selected doctor is currently not accepting new appointments."
+                )
+            if not doctor_profile.accepts_new_patients:
+                raise ValidationError(
+                    "The selected doctor is not accepting new patients at this time."
+                )
+        except AttributeError:
+            raise ValidationError("The selected user is not a registered doctor.")
 
         # Calculate end time (default 30 minutes)
         start_datetime = datetime.combine(appointment_date, start_time)
         end_datetime = start_datetime + timedelta(minutes=30)
         end_time = end_datetime.time()
 
-        # Check availability
-        if not self.is_slot_available(doctor, appointment_date, start_time):
-            raise ConflictError("Selected time slot is not available")
+        # Check if appointment date is valid
+        if appointment_date < timezone.now().date():
+            raise ValidationError("Cannot schedule appointments in the past.")
 
-        with transaction.atomic():
-            appointment = self.create(
-                patient=patient,
-                doctor=doctor,
-                appointment_date=appointment_date,
-                start_time=start_time,
-                end_time=end_time,
-                appointment_type=appointment_type,
-                patient_notes=patient_notes,
-                created_by=patient,
-                status="pending",
+        # Check if appointment is too far in the future (3 months)
+        max_future_date = timezone.now().date() + timedelta(days=90)
+        if appointment_date > max_future_date:
+            raise ValidationError(
+                "Cannot schedule appointments more than 3 months in advance."
             )
 
-            # Clear cache
-            self._clear_appointment_cache(patient.id, doctor.id)
+        # Check availability with more specific error messages
+        if not self.is_slot_available(doctor, appointment_date, start_time):
+            # Check if it's a weekend/holiday issue
+            day_of_week = appointment_date.weekday()
+            availability = DoctorAvailability.objects.filter(
+                doctor__user_profile__user=doctor,
+                day_of_week=day_of_week,
+                is_available=True,
+            ).first()
 
-            # Send notification
-            from app.notification.services import NotificationService
+            if not availability:
+                day_names = [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+                raise ConflictError(
+                    f"Dr. {doctor.get_full_name()} is not available on {day_names[day_of_week]}s."
+                )
 
-            notification_service = NotificationService()
-            notification_service.send_appointment_request_notification(appointment)
+            # Check if the time is outside available hours
+            if (
+                start_time < availability.start_time
+                or start_time >= availability.end_time
+            ):
+                raise ConflictError(
+                    f"The selected time is outside Dr. {doctor.get_full_name()}'s available hours "
+                    f"({availability.start_time.strftime('%I:%M %p')} - {availability.end_time.strftime('%I:%M %p')})."
+                )
 
-            return appointment
+            # Time slot is within hours but already booked
+            raise ConflictError(
+                "The selected time slot is no longer available. "
+                "Please choose a different time or refresh the available slots."
+            )
+
+        # Check for patient's existing appointments (prevent double booking)
+        existing_appointment = Appointment.objects.filter(
+            patient=patient,
+            appointment_date=appointment_date,
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+            status__in=["pending", "confirmed"],
+        ).first()
+
+        if existing_appointment:
+            raise ConflictError(
+                f"You already have an appointment scheduled at {existing_appointment.start_time.strftime('%I:%M %p')} "
+                f"on {appointment_date.strftime('%B %d, %Y')}."
+            )
+
+        with transaction.atomic():
+            try:
+                appointment = self.create(
+                    patient=patient,
+                    doctor=doctor,
+                    appointment_date=appointment_date,
+                    start_time=start_time,
+                    end_time=end_time,
+                    appointment_type=appointment_type,
+                    patient_notes=patient_notes,
+                    created_by=patient,
+                    status="pending",
+                )
+
+                # Clear cache
+                self._clear_appointment_cache(patient.id, doctor.id)
+
+                # Send notification
+                try:
+                    from app.notification.services import NotificationService
+
+                    notification_service = NotificationService()
+                    notification_service.send_appointment_request_notification(
+                        appointment
+                    )
+                except Exception:
+                    raise Exception
+
+                return appointment
+
+            except Exception:
+                raise ConflictError(
+                    "Unable to complete the booking due to a system error. "
+                    "The time slot may have been taken by another patient. Please try again."
+                )
 
     def get_available_slots(self, doctor, date):
         """Get available time slots for a doctor on a specific date."""
@@ -123,7 +212,6 @@ class AppointmentService(BaseService):
     def get_patient_appointments(self, patient, status=None):
         """Get appointments for a patient."""
         cache_key = f"patient_appointments:{patient.id}:{status or 'all'}"
-
 
         def get_appointments():
             return Appointment.objects.for_patient(patient, status).select_related(
