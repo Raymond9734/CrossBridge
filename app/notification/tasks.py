@@ -16,9 +16,6 @@ def process_pending_notifications():
             if notification.send_email:
                 send_email_notification.delay(notification.id)
 
-            if notification.send_sms:
-                send_sms_notification.delay(notification.id)
-
             if notification.send_push:
                 send_push_notification.delay(notification.id)
 
@@ -55,32 +52,6 @@ def send_email_notification(notification_id):
         return f"Notification {notification_id} not found"
     except Exception as e:
         return f"Failed to send email: {e}"
-
-
-@shared_task
-def send_sms_notification(notification_id):
-    """Send SMS notification."""
-    try:
-        notification = Notification.objects.get(id=notification_id)
-
-        # Get user's phone number
-        phone = getattr(notification.user.userprofile, "phone", None)
-        if not phone:
-            return f"No phone number for user {notification.user.email}"
-
-        # Here you would integrate with SMS service (Twilio, AWS SNS, etc.)
-        # For now, we'll just log it
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info(f"SMS to {phone}: {notification.message}")
-
-        return f"SMS sent to {phone}"
-
-    except Notification.DoesNotExist:
-        return f"Notification {notification_id} not found"
-    except Exception as e:
-        return f"Failed to send SMS: {e}"
 
 
 @shared_task
@@ -122,11 +93,3 @@ def cleanup_old_notifications():
     old_notifications.delete()
 
     return f"Cleaned up {count} old notifications"
-
-
-@shared_task
-def send_daily_digest():
-    """Send daily digest of notifications to users who prefer it."""
-    # This would be implemented based on user preferences
-    # for users who want a daily summary instead of individual notifications
-    pass
