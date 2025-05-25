@@ -59,102 +59,102 @@ class NotificationService(BaseService):
 
     def send_appointment_request_notification(self, appointment):
         """Send notification when appointment is requested."""
-        context = {
-            "patient_name": appointment.patient.get_full_name(),
-            "doctor_name": f"Dr. {appointment.doctor.get_full_name()}",
-            "appointment_date": appointment.appointment_date.strftime("%B %d, %Y"),
-            "appointment_time": appointment.start_time.strftime("%I:%M %p"),
-            "appointment_type": appointment.get_appointment_type_display(),
-        }
-
-        # Notify doctor
-        self.create_from_template(
-            user=appointment.doctor,
-            template_name="appointment_request",
-            context=context,
-            appointment=appointment,
-            priority="normal",
-        )
+        try:
+            # Notify doctor about new appointment request
+            self.create_notification(
+                user=appointment.doctor,
+                notification_type="appointment_request",
+                title="New Appointment Request",
+                message=f"New appointment request from {appointment.patient.get_full_name()} "
+                f"on {appointment.appointment_date.strftime('%B %d, %Y')} "
+                f"at {appointment.start_time.strftime('%I:%M %p')} "
+                f"for {appointment.get_appointment_type_display()}.",
+                appointment=appointment,
+                priority="normal",
+            )
+        except Exception as e:
+            # Log error but don't propagate to prevent booking failure
+            self.logger.error(f"Failed to send appointment request notification: {e}")
 
     def send_appointment_confirmed_notification(self, appointment):
         """Send notification when appointment is confirmed."""
-        context = {
-            "patient_name": appointment.patient.get_full_name(),
-            "doctor_name": f"Dr. {appointment.doctor.get_full_name()}",
-            "appointment_date": appointment.appointment_date.strftime("%B %d, %Y"),
-            "appointment_time": appointment.start_time.strftime("%I:%M %p"),
-            "appointment_type": appointment.get_appointment_type_display(),
-        }
-
-        # Notify patient
-        self.create_from_template(
-            user=appointment.patient,
-            template_name="appointment_confirmed",
-            context=context,
-            appointment=appointment,
-            priority="normal",
-        )
+        try:
+            # Notify patient that appointment is confirmed
+            self.create_notification(
+                user=appointment.patient,
+                notification_type="appointment_confirmed",
+                title="Appointment Confirmed",
+                message=f"Your appointment with Dr. {appointment.doctor.get_full_name()} "
+                f"on {appointment.appointment_date.strftime('%B %d, %Y')} "
+                f"at {appointment.start_time.strftime('%I:%M %p')} has been confirmed.",
+                appointment=appointment,
+                priority="normal",
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to send appointment confirmed notification: {e}")
 
     def send_appointment_cancelled_notification(self, appointment, cancelled_by):
         """Send notification when appointment is cancelled."""
-        context = {
-            "patient_name": appointment.patient.get_full_name(),
-            "doctor_name": f"Dr. {appointment.doctor.get_full_name()}",
-            "appointment_date": appointment.appointment_date.strftime("%B %d, %Y"),
-            "appointment_time": appointment.start_time.strftime("%I:%M %p"),
-            "cancelled_by": cancelled_by.get_full_name() if cancelled_by else "System",
-        }
+        try:
+            # Determine who to notify
+            if cancelled_by == appointment.patient:
+                recipient = appointment.doctor
+                message = (
+                    f"Appointment with {appointment.patient.get_full_name()} "
+                    f"on {appointment.appointment_date.strftime('%B %d, %Y')} "
+                    f"at {appointment.start_time.strftime('%I:%M %p')} has been cancelled by the patient."
+                )
+            else:
+                recipient = appointment.patient
+                message = (
+                    f"Your appointment with Dr. {appointment.doctor.get_full_name()} "
+                    f"on {appointment.appointment_date.strftime('%B %d, %Y')} "
+                    f"at {appointment.start_time.strftime('%I:%M %p')} has been cancelled."
+                )
 
-        # Notify the other party
-        if cancelled_by == appointment.patient:
-            recipient = appointment.doctor
-        else:
-            recipient = appointment.patient
-
-        self.create_from_template(
-            user=recipient,
-            template_name="appointment_cancelled",
-            context=context,
-            appointment=appointment,
-            priority="high",
-        )
+            self.create_notification(
+                user=recipient,
+                notification_type="appointment_cancelled",
+                title="Appointment Cancelled",
+                message=message,
+                appointment=appointment,
+                priority="high",
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to send appointment cancelled notification: {e}")
 
     def send_appointment_reminder(self, appointment, hours_before=24):
         """Send appointment reminder."""
-        context = {
-            "patient_name": appointment.patient.get_full_name(),
-            "doctor_name": f"Dr. {appointment.doctor.get_full_name()}",
-            "appointment_date": appointment.appointment_date.strftime("%B %d, %Y"),
-            "appointment_time": appointment.start_time.strftime("%I:%M %p"),
-            "hours_before": hours_before,
-        }
-
-        # Send to patient
-        self.create_from_template(
-            user=appointment.patient,
-            template_name="appointment_reminder",
-            context=context,
-            appointment=appointment,
-            priority="normal",
-        )
+        try:
+            self.create_notification(
+                user=appointment.patient,
+                notification_type="appointment_reminder",
+                title=f"Appointment Reminder - {hours_before}h",
+                message=f"Reminder: You have an appointment with Dr. {appointment.doctor.get_full_name()} "
+                f"tomorrow at {appointment.start_time.strftime('%I:%M %p')} "
+                f"for {appointment.get_appointment_type_display()}.",
+                appointment=appointment,
+                priority="normal",
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to send appointment reminder: {e}")
 
     def send_medical_record_notification(self, medical_record):
         """Send notification when medical record is updated."""
-        context = {
-            "patient_name": medical_record.patient.get_full_name(),
-            "doctor_name": f"Dr. {medical_record.doctor.get_full_name()}",
-            "appointment_date": medical_record.appointment.appointment_date.strftime(
-                "%B %d, %Y"
-            ),
-        }
-
-        self.create_from_template(
-            user=medical_record.patient,
-            template_name="medical_record_updated",
-            context=context,
-            appointment=medical_record.appointment,
-            priority="normal",
-        )
+        try:
+            self.create_notification(
+                user=medical_record.patient,
+                notification_type="medical_record_updated",
+                title="Medical Record Updated",
+                message=f"Your medical record from your appointment with "
+                f"Dr. {medical_record.doctor.get_full_name()} "
+                f"on {medical_record.appointment.appointment_date.strftime('%B %d, %Y')} has been updated.",
+                appointment=medical_record.appointment,
+                priority="normal",
+            )
+        except Exception as e:
+            # Log error but don't propagate to prevent booking failure
+            self.logger.error(f"Failed to send_medical_record_notification: {e}")
 
     def schedule_appointment_reminders(self, appointment):
         """Schedule reminders for an appointment."""
