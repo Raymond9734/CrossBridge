@@ -43,7 +43,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
             const doctor = doctors.find(d => d.name === selectedDoctor);
             if (!doctor) return;
 
-            const response = await fetch(`/api/available-slots/?doctor_id=${doctor.id}&date=${selectedDate}`);
+            const response = await fetch(`/api/v1/available-slots/?doctor_id=${doctor.id}&date=${selectedDate}`);
             const data = await response.json();
             setTimeSlots(data.slots || []);
             setSelectedTime(''); // Reset selected time when slots change
@@ -87,7 +87,7 @@ const AppointmentBookingModal = ({ isOpen, onClose, onBook, showToast }) => {
           };
   
           // Use fetch instead of router.post for API endpoint
-          const response = await fetch('/api/v1/book-appointment/', {
+          const response = await fetch('/api/v1/appointments/book/', {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
