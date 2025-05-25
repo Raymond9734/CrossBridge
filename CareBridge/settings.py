@@ -80,13 +80,13 @@ ALLOWED_HOSTS = config(
     default="localhost,127.0.0.1",
     cast=lambda v: [s.strip() for s in v.split(",")],
 )
-DJANGO_VITE = {
-    "default": {
-        "dev_mode": True,
-        "dev_server_port": 5173,
-        "manifest_path": BASE_DIR / "staticfiles" / "manifest.json",
-    }
-}
+# DJANGO_VITE = {
+#     "default": {
+#         "dev_mode": True,
+#         "dev_server_port": 5173,
+#         "manifest_path": BASE_DIR / "staticfiles" / "manifest.json",
+#     }
+# }
 # Application definition
 DJANGO_APPS = [
     "django.contrib.admin",
