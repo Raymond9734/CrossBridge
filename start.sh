@@ -15,27 +15,16 @@ echo "Database is ready!"
 echo "Setting up directories..."
 mkdir -p /app/staticfiles /app/media
 
-# # Handle Vite manifest - create a minimal one if missing
-if [ ! -f "/app/staticfiles/manifest.json" ]; then
-    echo "Creating minimal Vite manifest..."
-    mkdir -p /app/staticfiles
-    cat > /app/staticfiles/manifest.json << 'EOF'
-{
-  "main.js": {
-    "file": "main.js",
-    "src": "main.js",
-    "isEntry": true
-  }
-}
-EOF
-fi
+
+
+echo "Collecting static files..."
+python manage.py collectstatic --noinput --clear
 
 # Run migrations
 echo "Running database migrations..."
 python manage.py migrate --noinput
 
-echo "Collecting static files..."
-python manage.py collectstatic --noinput --clear
+
 
 # Start Gunicorn
 if command -v gunicorn &> /dev/null; then
