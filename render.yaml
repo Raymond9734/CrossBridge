@@ -1,0 +1,92 @@
+services:
+  # Web Service
+  - type: web
+    name: carebridge-web
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 3 CareBridge.wsgi:application"
+    plan: starter
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DEBUG
+        value: False
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: "carebridge-web.onrender.com,localhost,127.0.0.1"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://carebridge-web.onrender.com"
+      - key: USE_POSTGRESS_DATABASE
+        value: True
+      - key: DATABASE_URL
+        fromDatabase:
+          name: carebridge-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: carebridge-redis
+          property: connectionString
+
+  # PostgreSQL Database
+  - type: pserv
+    name: carebridge-db
+    env: postgresql
+    plan: starter
+    databaseName: carebridge
+    databaseUser: carebridge_user
+
+  # Redis Cache
+  - type: redis
+    name: carebridge-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+
+  # Background Worker (Celery)
+  - type: worker
+    name: carebridge-worker
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "celery -A CareBridge worker -l info --concurrency=2"
+    plan: starter
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DEBUG
+        value: False
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: carebridge-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: carebridge-redis
+          property: connectionString
+
+  # Celery Beat Scheduler
+  - type: worker
+    name: carebridge-scheduler
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "celery -A CareBridge beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    plan: starter
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DEBUG
+        value: False
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: carebridge-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: carebridge-redis
+          property: connectionString
