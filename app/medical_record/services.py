@@ -55,10 +55,8 @@ class MedicalRecordService(BaseService):
         cache_key = f"patient_medical_records:{patient.id}:{limit or 'all'}"
 
         def get_records():
-            queryset = (
-                MedicalRecord.objects.for_patient(patient)
-                .select_related("appointment", "appointment__doctor")
-                .prefetch_related("prescriptions", "lab_results")
+            queryset = MedicalRecord.objects.for_patient(patient).select_related(
+                "appointment", "appointment__doctor"
             )
 
             if limit:
@@ -73,10 +71,8 @@ class MedicalRecordService(BaseService):
         cache_key = f"doctor_medical_records:{doctor.id}:{limit or 'all'}"
 
         def get_records():
-            queryset = (
-                MedicalRecord.objects.for_doctor(doctor)
-                .select_related("appointment", "appointment__patient")
-                .prefetch_related("prescriptions", "lab_results")
+            queryset = MedicalRecord.objects.for_doctor(doctor).select_related(
+                "appointment", "appointment__patient"
             )
 
             if limit:
