@@ -130,7 +130,7 @@ const ScheduleManagement = ({ showToast }) => {
       try {
         const csrfToken = getCSRFToken();
         
-        const response = await fetch('/api/doctor-availability/', {
+        const response = await fetch('/api/v1/doctor-availability/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
