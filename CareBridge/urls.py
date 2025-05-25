@@ -4,13 +4,16 @@ from django.urls import include, path
 from django.conf import settings
 from django.conf.urls.static import static
 
+
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # API endpoints - using the modular structure
+    # API Routes - All API endpoints under /api/
     path("api/", include("app.api.urls")),
-    # Frontend routes (for Inertia.js pages)
+    # Page Routes - Minimal page endpoints for SPA
     path("", include("app.frontend.urls")),
-]
+    # Static files
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
 
 # Serve media files in development
 if settings.DEBUG:
