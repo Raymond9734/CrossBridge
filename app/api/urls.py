@@ -80,11 +80,6 @@ router.register(
 v1_patterns = [
     path("", include(router.urls)),
     path("auth/", include("rest_framework.urls")),  # DRF browsable API auth
-    # AJAX utility endpoints (for backward compatibility with frontend)
-    path("available-slots/", get_available_slots_ajax, name="available_slots_ajax"),
-    path(
-        "available-doctors/", get_available_doctors_ajax, name="available_doctors_ajax"
-    ),
 ]
 
 # Main API patterns
