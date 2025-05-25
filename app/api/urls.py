@@ -26,9 +26,7 @@ from .v1.views import (
     NotificationPreferenceViewSet,
     # New ViewSets
     SearchViewSet,
-    ReportsViewSet,
     StatisticsViewSet,
-    FileUploadViewSet,
     SystemViewSet,
     PatientManagementViewSet,
     # AJAX utility functions
@@ -72,9 +70,7 @@ router.register(
 
 # New routes
 router.register(r"search", SearchViewSet, basename="search")
-router.register(r"reports", ReportsViewSet, basename="reports")
 router.register(r"statistics", StatisticsViewSet, basename="statistics")
-router.register(r"uploads", FileUploadViewSet, basename="uploads")
 router.register(r"system", SystemViewSet, basename="system")
 router.register(
     r"patient-management", PatientManagementViewSet, basename="patient-management"
