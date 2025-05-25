@@ -43,7 +43,7 @@ const ScheduleManagement = ({ showToast }) => {
     try {
       const csrfToken = getCSRFToken();
       
-      const response = await fetch('/api/doctor-availability/', {
+      const response = await fetch('/api/v1/doctor-availability/', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -268,7 +268,7 @@ const ScheduleManagement = ({ showToast }) => {
     try {
       const csrfToken = getCSRFToken();
       
-      const response = await fetch('/api/doctor-availability/', {
+      const response = await fetch('/api/v1/doctor-availability/', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -301,7 +301,7 @@ const ScheduleManagement = ({ showToast }) => {
     try {
       const csrfToken = getCSRFToken();
       
-      const response = await fetch('/api/toggle-availability/', {
+      const response = await fetch('/api/v1/toggle-availability/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
