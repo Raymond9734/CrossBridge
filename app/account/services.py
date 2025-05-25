@@ -53,6 +53,7 @@ class UserProfileService(BaseService):
                 setattr(profile, key, value)
             profile.save()
 
+            # Create DoctorProfile with the provided specialty
             DoctorProfile.objects.create(
                 user_profile=profile,
                 license_number=doctor_data.get("license_number", f"LIC-{user.id:06d}"),
@@ -64,7 +65,9 @@ class UserProfileService(BaseService):
                 consultation_fee=doctor_data.get("consultation_fee", 150.00),
             )
 
-            self.logger.info(f"Created doctor profile for user {user.email}")
+            self.logger.info(
+                f"Created doctor profile for user {user.email} with specialty: {doctor_data.get('specialty')}"
+            )
             return profile
 
     def update_profile(self, profile, data):
