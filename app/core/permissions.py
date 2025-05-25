@@ -71,3 +71,4 @@ class AppointmentBookingThrottle(UserRateThrottle):
     """Custom throttle for appointment booking."""
 
     scope = "appointment_booking"
+    rate = "10/min"
