@@ -13,9 +13,7 @@ from app.medical_record.models import MedicalRecord
 from app.medical_record.serializers import (
     MedicalRecordSerializer,
 )
-from app.medical_record.services import (
-    MedicalRecordService,
-)
+
 from app.core.permissions import IsDoctor, IsDoctorOrPatient
 
 import logging
@@ -55,17 +53,13 @@ class MedicalRecordViewSet(BaseModelViewSet):
                 )
 
             if user_profile.role == "doctor":
-                records = (
-                    MedicalRecord.objects.filter(appointment__doctor=request.user)
-                    .select_related("appointment", "appointment__patient")
-                    .prefetch_related("prescriptions", "lab_results_records")[:50]
-                )
+                records = MedicalRecord.objects.filter(
+                    appointment__doctor=request.user
+                ).select_related("appointment", "appointment__patient")[:50]
             else:
-                records = (
-                    MedicalRecord.objects.filter(appointment__patient=request.user)
-                    .select_related("appointment", "appointment__doctor")
-                    .prefetch_related("prescriptions", "lab_results_records")[:50]
-                )
+                records = MedicalRecord.objects.filter(
+                    appointment__patient=request.user
+                ).select_related("appointment", "appointment__doctor")[:50]
 
             records_data = []
             for record in records:
@@ -150,40 +144,69 @@ class MedicalRecordViewSet(BaseModelViewSet):
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Extract vitals and other data
-            vitals_data = {
-                "blood_pressure_systolic": request.data.get("blood_pressure_systolic"),
-                "blood_pressure_diastolic": request.data.get(
-                    "blood_pressure_diastolic"
-                ),
-                "heart_rate": request.data.get("heart_rate"),
-                "temperature": request.data.get("temperature"),
-                "weight": request.data.get("weight"),
-                "height": request.data.get("height"),
+            # Create medical record
+            record_data = {
+                "appointment": appointment,
+                "diagnosis": request.data.get("diagnosis", ""),
+                "treatment": request.data.get("treatment", ""),
+                "prescription": request.data.get("prescription", ""),
+                "lab_results": request.data.get("lab_results", ""),
+                "allergies": request.data.get("allergies", ""),
+                "medications": request.data.get("medications", ""),
+                "medical_history": request.data.get("medical_history", ""),
+                "follow_up_required": request.data.get("follow_up_required", False),
+                "is_sensitive": request.data.get("is_sensitive", False),
             }
 
-            medical_record_service = MedicalRecordService()
-            record = medical_record_service.create_record(
-                appointment=appointment,
-                diagnosis=request.data.get("diagnosis", ""),
-                treatment=request.data.get("treatment", ""),
-                vitals=vitals_data,
-            )
+            # Add vitals if provided
+            vitals_fields = [
+                "blood_pressure_systolic",
+                "blood_pressure_diastolic",
+                "heart_rate",
+                "temperature",
+                "weight",
+                "height",
+            ]
+            for field in vitals_fields:
+                value = request.data.get(field)
+                if value:
+                    record_data[field] = value
 
-            # Additional fields
-            record.prescription = request.data.get("prescription", "")
-            record.lab_results = request.data.get("lab_results", "")
-            record.allergies = request.data.get("allergies", "")
-            record.medications = request.data.get("medications", "")
-            record.medical_history = request.data.get("medical_history", "")
-            record.follow_up_required = request.data.get("follow_up_required", False)
+            # Handle follow-up date
+            follow_up_date = request.data.get("follow_up_date")
+            if follow_up_date:
+                try:
+                    record_data["follow_up_date"] = datetime.strptime(
+                        follow_up_date, "%Y-%m-%d"
+                    ).date()
+                except ValueError:
+                    return self.error_response(
+                        "Invalid follow-up date format. Use YYYY-MM-DD",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
 
-            if record.follow_up_required and request.data.get("follow_up_date"):
-                record.follow_up_date = datetime.strptime(
-                    request.data.get("follow_up_date"), "%Y-%m-%d"
-                ).date()
+            # Create the record
+            record = MedicalRecord.objects.create(**record_data)
 
-            record.save()
+            # Mark appointment as completed
+            appointment.status = "completed"
+            appointment.save()
+
+            # Send notification to patient
+            try:
+                from app.notification.services import NotificationService
+
+                notification_service = NotificationService()
+                notification_service.create_notification(
+                    user=appointment.patient,
+                    notification_type="medical_record_updated",
+                    title="Medical Record Available",
+                    message=f"Your medical record from your appointment with Dr. {appointment.doctor.get_full_name()} is now available.",
+                    appointment=appointment,
+                    priority="normal",
+                )
+            except Exception:
+                pass  # Don't fail record creation if notification fails
 
             return self.success_response(
                 data={"medical_record": MedicalRecordSerializer(record).data},
@@ -193,6 +216,82 @@ class MedicalRecordViewSet(BaseModelViewSet):
 
         except Exception as e:
             return self.handle_exception(e, "Failed to create medical record")
+
+    def retrieve(self, request, pk=None):
+        """Retrieve medical record with access control."""
+        try:
+            record = self.get_object()
+            user_profile = self.get_user_profile()
+
+            # Access control - only patient, doctor, or admin can view
+            if (
+                request.user not in [record.patient, record.doctor]
+                and not request.user.is_staff
+            ):
+                return self.error_response(
+                    "Permission denied", status_code=status.HTTP_403_FORBIDDEN
+                )
+
+            # Filter sensitive information for non-doctors
+            serializer = MedicalRecordSerializer(record)
+            data = serializer.data
+
+            # If user is patient and record is marked sensitive, filter some fields
+            if (
+                request.user == record.patient
+                and record.is_sensitive
+                and user_profile
+                and user_profile.role == "patient"
+            ):
+                # Remove some sensitive fields for patient view
+                sensitive_fields = ["doctor_notes", "is_sensitive"]
+                for field in sensitive_fields:
+                    data.pop(field, None)
+
+            return self.success_response(data={"medical_record": data})
+
+        except Exception as e:
+            return self.handle_exception(e, "Failed to retrieve medical record")
+
+    @action(detail=False, methods=["get"])
+    def for_appointment(self, request):
+        """Get medical record for specific appointment."""
+        try:
+            appointment_id = request.query_params.get("appointment_id")
+            if not appointment_id:
+                return self.error_response(
+                    "Appointment ID is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
+                appointment = Appointment.objects.get(id=appointment_id)
+            except Appointment.DoesNotExist:
+                return self.error_response(
+                    "Appointment not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Check access
+            if request.user not in [appointment.patient, appointment.doctor]:
+                return self.error_response(
+                    "Permission denied", status_code=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get medical record
+            try:
+                record = appointment.medical_record
+                return self.success_response(
+                    data={"medical_record": MedicalRecordSerializer(record).data}
+                )
+            except MedicalRecord.DoesNotExist:
+                return self.success_response(
+                    data={"medical_record": None},
+                    message="No medical record found for this appointment",
+                )
+
+        except Exception as e:
+            return self.handle_exception(e, "Failed to get medical record")
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
