@@ -52,6 +52,12 @@ RUN adduser --disabled-password --gecos '' --uid 1000 appuser
 RUN mkdir -p /app/staticfiles /app/media \
     && chown -R appuser:appuser /app
 
+# Run collectstatic as root (before switching user)
+RUN python manage.py collectstatic --noinput
+
+# Change ownership so appuser can access staticfiles
+RUN chown -R appuser:appuser /app/staticfiles
+
 # Copy and make startup script executable
 COPY start.sh .
 RUN chmod +x start.sh \
